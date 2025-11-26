@@ -1,0 +1,142 @@
+/* Main content area - reduced width to make room for right sidebar */
+#root > div:nth-child(1) > div.withScreencast > div > div > div > section.stAppViewMain.main > div.stAppViewBlockContainer.block-container > div > div > div > div > div:first-child {
+    font-size: 16px;
+    font-family: "Source Sans Pro", sans-serif;
+    width: 550px !important;
+    margin-right: 20px !important;
+    flex: none !important;
+}
+
+/* Adjust max-width for container */
+#root > div:nth-child(1) > div.withScreencast > div > div > div > section.stAppViewMain.main > div.stAppViewBlockContainer.block-container {
+    max-width: 75rem;
+    padding-bottom: 5rem;
+}
+
+/* Fix chat input at bottom */
+.stChatFloatingInputContainer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 270px !important;
+    right: 0 !important;
+    z-index: 1000 !important;
+    background: linear-gradient(to top, rgba(38, 39, 48, 1) 0%, rgba(38, 39, 48, 0.95) 50%, rgba(38, 39, 48, 0) 100%) !important;
+}
+
+/* Ensure chat input stays in place */
+[data-testid="stChatInput"] {
+    bottom: 0 !important;
+    position: fixed !important;
+    width: 55%;
+    padding: 10px;
+}
+
+/* Add padding to chat messages container to prevent overlap with fixed input */
+[data-testid="stChatMessageContainer"] {
+    padding-bottom: 1rem !important;
+}
+
+/* Right sidebar styling */
+.right-sidebar {
+    background-color: transparent;
+    padding: 0;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* Ticket item styling */
+.ticket-item {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0.25rem;
+    border-left: 3px solid #1f77b4;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ticket-item:hover {
+    background-color: rgba(232, 244, 248, 0.2);
+    transform: translateX(5px);
+}
+
+.ticket-item a {
+    color: #e8f4f8;
+    text-decoration: none;
+}
+
+.ticket-item a:hover {
+    color: #ffffff;
+}
+
+/* Database/table item styling */
+.db-item {
+    background-color: rgba(255, 255, 255, 0.08);
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    border-radius: 0.375rem;
+    border-left: 4px solid #2ca02c;
+    color: #e8f4f8;
+    transition: all 0.2s ease;
+}
+
+.db-item:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-left-color: #4ade80;
+    transform: translateX(3px);
+}
+
+/* Database name styling */
+.db-item > div:first-child {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    color: #ffffff;
+    letter-spacing: 0.01em;
+}
+
+/* Table name styling */
+.db-item > div > div {
+    margin-left: 1rem;
+    padding: 0.3rem 0;
+    color: #cbd5e1;
+    font-size: 0.875rem;
+    font-family: 'Courier New', monospace;
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    padding-left: 0.75rem;
+    transition: all 0.15s ease;
+}
+
+.db-item > div > div:hover {
+    color: #ffffff;
+    border-left-color: #2ca02c;
+    padding-left: 1rem;
+}
+
+/* Add subtle divider between tables */
+.db-item > div > div:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.2rem;
+}
+
+/* Section headers in right sidebar */
+.sidebar-section-header {
+    font-weight: 600;
+    color: #ffffff;
+    padding: 0.5rem 0;
+    margin-top: 0rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 2px solid #1f77b4;
+    font-size: 1.1rem;
+}
+
+/* Column adjustments */
+#root > div:nth-child(1) > div.withScreencast > div > div > div > section.stAppViewMain.main > div.stAppViewBlockContainer.block-container > div {
+    margin-top: -40px;
+}
+
+/* Remove extra spacing/padding from right column */
+[data-testid="column"] {
+    padding-top: 0 !important;
+}

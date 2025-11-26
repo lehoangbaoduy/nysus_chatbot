@@ -3,6 +3,6 @@ I'm having a packout issue whereas the module is in the wrong container. What sh
 I have a label issues at DMS. They couldn't print a label for IMM Machine 16. What should I do?
 I have a server performance issue at Yanfeng Santa Maria. What should I look for?
 I have a server performance at IAC Arlington. What should I do? Is there any related tickets?
-I'm having a broadcast parsing stopped at YF - Chattanooga. Write me a SQL query to gain more clues based on the given SQL server connection.
+I'm having a Volkswagen broadcast parsing stopped at YF - Chattanooga. Give me some relevant tickets that has been resolved with similar issues and write me a SQL query using the MCP agent to gain more clues based on the given SQL server connection.
 I'm having a broadcast parsing stopped at Yanfeng Fountain Inn. Write me a query to figure out this issue.
 List first 3 tables of CUSTOM_YANFENG database and NYSUS_BROADCAST database

@@ -45,13 +45,15 @@ class ChatbotAgentFramework:
         self.memory = self.read_memory()
         self.planner = None
         self.db_connection_params = db_connection_params
+        client = chromadb.PersistentClient(path=self.DB)
+        self.collection = client.get_or_create_collection('os_tickets')
         self.log(f"ChatbotAgentFramework initialized with db_connection_params: {db_connection_params is not None}")
 
     def init_agents_as_needed(self):
         if not self.planner:
             self.log("Initializing Agent Framework")
             self.log(f"Passing db_connection_params to PlanningAgent: {self.db_connection_params is not None}")
-            self.planner = PlanningAgent(db_connection_params=self.db_connection_params)
+            self.planner = PlanningAgent(collection=self.collection, db_connection_params=self.db_connection_params)
             self.log("Chatbot Agent Framework is ready")
 
     def update_db_connection_params(self, db_connection_params):

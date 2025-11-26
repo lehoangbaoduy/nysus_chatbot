@@ -260,9 +260,20 @@ class MCPAgent(Agent):
         """
         self.log("Generating SQL query from natural language question")
 
-        system_prompt = """
+        system_prompt = f"""
             You are a Querymancer, a master database engineer with exceptional expertise in SQL.
             Your purpose is to transform natural language requests into precise, efficient SQL queries that deliver exactly what the user needs.
+
+            INSTRUCTIONS FOR SQL QUERY GENERATION:
+                <instruction>READ THE SCHEMA CAREFULLY - Each table is listed under its database with format [DATABASE].schema.table in this schema {schema}</instruction>
+                <instruction>VERIFY the correct database for your target table - tables with similar names may exist in different databases</instruction>
+                <instruction>NEVER assume column names - only use columns explicitly shown in the schema or use SELECT *</instruction>
+                <instruction>Match column names EXACTLY as shown in the schema (case-sensitive)</instruction>
+                <instruction>If columns are listed for a table, you MUST use those exact column names (do not invent alternatives)</instruction>
+                <instruction>Use fully qualified table names [DATABASE].schema.table in your queries to avoid ambiguity</instruction>
+                <instruction>If you're unsure about column names for a table, use SELECT * instead of guessing</instruction>
+                <instruction>Double-check that the database name in your FROM clause matches the database where the table is actually located</instruction>
+                <instruction>Take into account the chat conversation history for more info</instruction>
 
             CRITICAL RULES FOR QUERY ACCURACY:
             1. ONLY use column names that are explicitly provided in the database and table schema
@@ -273,18 +284,6 @@ class MCPAgent(Agent):
             6. If the user asks about specific fields that don't exist in the schema, explain what's missing
             7. If you feel the need to join between some tables across all databases, feel free to do so and make sure those tables exist in that database
             and mention your assumptions in the output if there's any.
-
-            <instructions>
-                <instruction>READ THE SCHEMA CAREFULLY - Each table is listed under its database with format [DATABASE].schema.table</instruction>
-                <instruction>VERIFY the correct database for your target table - tables with similar names may exist in different databases</instruction>
-                <instruction>NEVER assume column names - only use columns explicitly shown in the schema or use SELECT *</instruction>
-                <instruction>Match column names EXACTLY as shown in the schema (case-sensitive)</instruction>
-                <instruction>If columns are listed for a table, you MUST use those exact column names (do not invent alternatives)</instruction>
-                <instruction>Use fully qualified table names [DATABASE].schema.table in your queries to avoid ambiguity</instruction>
-                <instruction>If you're unsure about column names for a table, use SELECT * instead of guessing</instruction>
-                <instruction>Double-check that the database name in your FROM clause matches the database where the table is actually located</instruction>
-                <instruction>Take into account the chat conversation history for more info</instruction>
-            </instructions>
 
             IMPORTANT OUTPUT FORMAT:
             1. Return your response in JSON format with these fields:
@@ -300,13 +299,13 @@ class MCPAgent(Agent):
             5. Prefer SELECT * when column names are not explicitly provided in the schema
 
             Example response:
-            {
+            {{
                 "database": "NYSUS_SEQUENCE_MES",
                 "table": "modules",
                 "sql_query": "SELECT TOP 10 * FROM NYSUS_SEQUENCE_MES.dbo.modules ORDER BY 1 DESC",
                 "explanation": "Retrieves the first 10 modules from the table. Using SELECT * because specific column names were not provided in the schema.",
-                "assumptions": []
-            }
+                "assumptions": "I assumed the 'modules' table contains relevant module data based on the user's question."
+            }}
         """
 
         user_prompt = f"""Database Schema:
@@ -350,7 +349,7 @@ class MCPAgent(Agent):
                 "error": True
             }
 
-    def query_database(self, user_question: str, chat_history: List = [], schema: str = None) -> Dict:
+    def answer_question_with_database(self, user_question: str, chat_history: List = [], schema: str = None) -> Dict:
         """
         Main method to answer user questions by querying the database
         :param user_question: The user's question

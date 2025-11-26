@@ -4,6 +4,7 @@ import threading
 import time
 import base64
 import pyodbc
+import re
 import sys
 import concurrent.futures
 import streamlit as st
@@ -11,7 +12,6 @@ from typing import List, Dict
 from log_utils import reformat
 from chatbot_agent_framework import ChatbotAgentFramework
 from langchain_core.messages import AIMessage, HumanMessage
-
 
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -29,7 +29,8 @@ def setup_logging(log_queue):
         datefmt="%Y-%m-%d %H:%M:%S %z",
     )
     handler.setFormatter(formatter)
-    logger = logging.getLogger()
+    logger = logging.getLogger("logging")
+    logger.setLevel(logging.DEBUG)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
@@ -42,6 +43,22 @@ def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
     return base64.b64encode(data).decode()
+
+def extract_ticket_ids_and_urls(response: str) -> list:
+    """Extract ticket IDs and URLs from response"""
+    ticket_data = []
+    seen_tickets = set()
+
+    # Pattern to find markdown-style ticket links with URLs
+    url_pattern = r'\((http://tickets\.nysus\.net/scp/tickets\.php\?id=(\d+))\)'
+    url_matches = re.findall(url_pattern, response)
+
+    for url, ticket_id in url_matches:
+        if ticket_id not in seen_tickets:
+            ticket_data.append({'id': ticket_id, 'url': url})
+            seen_tickets.add(ticket_id)
+
+    return ticket_data
 
 def group_databases_and_tables(matching_databases: List[Dict[str, str]]) -> Dict[str, List[str]]:
     """
@@ -126,7 +143,7 @@ class App:
             # Result can be either a Dict (from Planning/Ensemble Agent) or List (from memory)
             if isinstance(result, dict):
                 # Response from Planning Agent with tickets, MCP data, and/or recently asked questions
-                relevant_tickets = result.get('relevant_tickets', [])
+                rag_response = result.get('rag_response', None)
                 mcp_response = result.get('mcp_response', None)
                 natural_response = result.get('natural_response', None)
                 recently_asked_questions = result.get('recently_asked_questions', [])
@@ -136,9 +153,8 @@ class App:
                 matching_databases = []
 
                 # Extract ticket numbers for sidebar
-                if relevant_tickets:
-                    for ticket in relevant_tickets:
-                        matching_tickets.append(ticket)
+                if rag_response:
+                    matching_tickets = extract_ticket_ids_and_urls(rag_response)
 
                 # Extract database info for sidebar
                 if mcp_response and mcp_response.get('database'):
@@ -160,18 +176,13 @@ class App:
                             response_text += f"{i}. {question.question}\n"
                             if hasattr(question, 'answer') and question.answer:
                                 response_text += f"   Answer: {question.answer[:200]}...\n\n"
-                elif relevant_tickets or (mcp_response and mcp_response.get('success')):
+                elif rag_response or (mcp_response and mcp_response.get('success')):
                     # Show relevant tickets and/or database response
-                    if relevant_tickets:
-                        response_text = f"I found {len(relevant_tickets)} relevant tickets that might help answer your question.\n\n"
-                        for ticket in relevant_tickets:
-                            if hasattr(ticket, 'ticket_number'):
-                                response_text += f"**Ticket #{ticket.ticket_number}**: {ticket.subject if hasattr(ticket, 'subject') else 'No subject'}\n"
-                                if hasattr(ticket, 'ticket_description'):
-                                    response_text += f"{ticket.ticket_description}\n\n"
+                    if rag_response:
+                        response_text = rag_response + "\n\n"
 
                     if mcp_response and mcp_response.get('success'):
-                        if relevant_tickets:
+                        if rag_response:
                             response_text += "\n\n---\n\n**Additional information from database:**\n\n"
                         response_text += mcp_response.get('user_message', '')
                 else:
@@ -384,10 +395,16 @@ class App:
             st.markdown('<div class="sidebar-section-header">🎫 Matching Tickets</div>', unsafe_allow_html=True)
             if st.session_state.matching_tickets:
                 for ticket in st.session_state.matching_tickets:
-                    ticket_number = str(ticket.ticket_number) if hasattr(ticket, 'ticket_number') else "Unknown"
-                    ticket_url = ticket.url if hasattr(ticket, 'url') else "#"
+                    # Handle both dict format (with 'id' and 'url') and legacy string format
+                    if isinstance(ticket, dict):
+                        ticket_id = ticket['id']
+                        ticket_url = ticket['url']
+                    else:
+                        ticket_id = str(ticket)
+                        ticket_url = f"http://tickets.nysus.net/scp/tickets.php?id={ticket_id}"
+
                     st.markdown(
-                        f'<div class="ticket-item"><a href="{ticket_url}" target="_blank">🎫 Ticket #{ticket_number}</a></div>',
+                        f'<div class="ticket-item"><a href="{ticket_url}" target="_blank">🎫 Ticket #{ticket_id}</a></div>',
                         unsafe_allow_html=True
                     )
             else:

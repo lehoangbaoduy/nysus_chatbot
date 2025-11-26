@@ -22,11 +22,11 @@ class PlanningAgent(Agent):
         self.client = OpenAI()
         self.log("Planning Agent is ready")
 
-    def synthesize_response(self, user_query: str, tickets: List[Ticket], mcp_response: Optional[Dict], recently_asked_questions: List[str], chat_history: List = []) -> str:
+    def synthesize_response(self, user_query: str, rag_response: Optional[str], mcp_response: Optional[Dict], recently_asked_questions: List[str], chat_history: List = []) -> str:
         """
         Use LLM to generate a natural, conversational response based on retrieved information
         :param user_query: The user's original question
-        :param tickets: List of relevant tickets found
+        :param rag_response: Natural language response from RAG system (Frontier Agent)
         :param mcp_response: Response from MCP database query
         :param chat_history: Previous conversation context
         :return: Natural language response string
@@ -43,18 +43,10 @@ class PlanningAgent(Agent):
                 else:
                     questions_context += f"\n{i}. {question}\n"
 
-        # Build context from tickets
-        ticket_context = ""
-        if tickets:
-            ticket_context = "\n\nRelevant support tickets found:\n"
-            for i, ticket in enumerate(tickets, 1):  # Limit to top 5 for context
-                ticket_context += f"\n{i}. Ticket #{ticket.ticket_number} - {ticket.subject}\n"
-                ticket_context += f"   Company: {ticket.company.company_description}\n"
-                if ticket.author:
-                    ticket_context += f"   Author: {ticket.author}\n"
-                # Get first 300 chars of description
-                desc_preview = ticket.description[:300] + "..." if len(ticket.description) > 300 else ticket.description
-                ticket_context += f"   Description: {desc_preview}\n"
+        # Build context from RAG response
+        rag_context = ""
+        if rag_response:
+            rag_context = f"\n\nRAG System Response (from ticket knowledge base):\n{rag_response}\n"
 
         # Build context from database query
         db_context = ""
@@ -74,35 +66,32 @@ class PlanningAgent(Agent):
                 history_context += f"{role}: {content}\n"
 
         system_prompt = """You are a helpful technical support assistant for a manufacturing execution system (MES) company.
-        Your role is to provide clear, conversational answers based on support tickets, database information, and cached questions.
+        Your role is to provide clear, conversational answers based on RAG responses from ticket knowledge base, database information, and cached questions.
 
         Guidelines:
         - Be conversational and natural, not robotic
         - If recently asked similar questions are provided, acknowledge them and reference relevant ones
-        - IMPORTANT: When multiple tickets are provided, acknowledge ALL of them at the beginning (e.g., "I found 5 relevant tickets...")
-        - Then reference specific ticket numbers when discussing their content in detail
-        - Summarize technical information in an accessible way
-        - If multiple tickets are relevant, briefly mention how they relate or what common themes exist
-        - If database results are provided, integrate them naturally into your response
+        - If a RAG system response is provided, DO NOT mention database info from the RAG response, ONLY include any info regards related ticket,
+        - Summarize technical information in an accessible way.
+        - If database results are provided, inintegrate them naturally into your response
+        - If both RAG and database info are provided, USE THE DATABASE CONTEXT FOR SQL QUERY DETAILS.
         - Stay focused on the user's question
         - If information is incomplete, acknowledge it naturally
         - Use a friendly, professional tone
-        - Make sure to indicate the total number of tickets found, even if you only discuss a few in detail
         """
 
         user_prompt = f"""User Question: {user_query}
         {history_context}
         {questions_context}
-        {ticket_context}
+        {rag_context}
         {db_context}
 
         Please provide a natural, helpful response to the user's question based on the information above.
 
         IMPORTANT:
-        - Start by mentioning the TOTAL NUMBER of tickets found (if any tickets are provided above)
-        - Then synthesize the information into a coherent, conversational answer
-        - Reference specific ticket numbers when briefly discuss their details. DO NOT INCLUDE THE TICKET URL.
-        - Don't just list the tickets or questions - explain how they relate to the user's question
+        - If a RAG response is provided, use it as the main source for ticket information
+        - Synthesize the information into a coherent, conversational answer
+        - Don't just repeat the RAG response - enhance it with database results if available
         - If similar questions were asked recently, mention that and use their context to inform your response
         """
 
@@ -127,23 +116,11 @@ class PlanningAgent(Agent):
             fallback = "I found some relevant information for your question.\n\n"
             if recently_asked_questions:
                 fallback += f"Found {len(recently_asked_questions)} similar question(s) asked recently.\n"
-            if tickets:
-                fallback += f"Found {len(tickets)} relevant ticket(s).\n"
+            if rag_response:
+                fallback += f"RAG Response: {rag_response}\n\n"
             if mcp_response and mcp_response.get('success'):
                 fallback += f"Also queried database: {mcp_response.get('database')}\n"
             return fallback
-
-    def run(self, Company: Company) -> Ticket:
-        """
-        Run the workflow for a particular ticket
-        :param Company: the Company, summarized from an RSS scrape
-        :returns: an Ticket including the discount
-        """
-        self.log("Planning Agent is pricing up a potential Company")
-        estimate = self.ensemble.price(Company.product_description)
-        discount = estimate - Company.price
-        self.log(f"Planning Agent has processed a Company with discount ${discount:.2f}")
-        return Ticket(Company=Company, estimate=estimate, discount=discount)
 
     def plan(self, memory: List[str] = [], user_query: str = "", chat_history: List = [], uploaded_files: List = [], schema: str = None) -> Optional[List]:
         """
@@ -156,11 +133,12 @@ class PlanningAgent(Agent):
         :param chat_history: previous conversation context
         :param uploaded_files: any files uploaded by the user
         :param schema: optional pre-fetched database schema
-        :return: a list of tickets/questions if any were found, otherwise None
+        :return: a dict with response information including natural_response, rag_response, mcp_response
         """
         response = {
             'recently_asked_questions': [],
-            'relevant_tickets': [],
+            'rag_response': None,
+            'rag_chunks': [],
             'mcp_response': None,
             'natural_response': ""
         }
@@ -183,16 +161,13 @@ class PlanningAgent(Agent):
             self.log("Planning Agent is delegating to Ensemble Agent to answer the user question")
             ensemble_response = self.ensemble.answer_question(user_query, chat_history, n_results=5, schema=schema)
 
-            relevant_tickets = ensemble_response.get('relevant_tickets', [])
-            if relevant_tickets:
-                self.log(f"Planning Agent received {len(relevant_tickets)} relevant tickets from Ensemble Agent")
-                print(f"Found {len(relevant_tickets)} relevant tickets from knowledge base:")
-                for i, ticket in enumerate(relevant_tickets, 1):
-                    print(f"  {i}. Ticket #{ticket.ticket_number}: {ticket.subject}")
-                    print(f"     Company: {ticket.company.company_description}")
-                    print(f"     Author: {ticket.author if ticket.author else 'N/A'}")
-                    print(f"     Created: {ticket.created_at}")
-                response['relevant_tickets'] = relevant_tickets
+            relevant_tickets_response = ensemble_response.get('relevant_tickets_response', None)
+            if relevant_tickets_response:
+                # relevant_tickets_response is a tuple: (answer_text, chunks)
+                rag_answer, rag_chunks = relevant_tickets_response
+                self.log(f"Planning Agent received RAG response from knowledge base with {len(rag_chunks)} relevant chunks")
+                response['rag_response'] = rag_answer
+                response['rag_chunks'] = rag_chunks
 
             mcp_response = ensemble_response.get('mcp_response', None)
             if mcp_response:
@@ -200,7 +175,7 @@ class PlanningAgent(Agent):
                 response['mcp_response'] = mcp_response
 
         # Generate natural response using LLM
-        natural_response = self.synthesize_response(user_query, response['relevant_tickets'], response['mcp_response'], response['recently_asked_questions'], chat_history)
+        natural_response = self.synthesize_response(user_query, response['rag_response'], response['mcp_response'], response['recently_asked_questions'], chat_history)
         response['natural_response'] = natural_response
 
         return response

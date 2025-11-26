@@ -42,16 +42,15 @@ class EnsembleAgent(Agent):
         self.log("Ensemble Agent delegating ticket search to Frontier Agent")
 
         # Use FrontierAgent to find relevant tickets from ChromaDB
-        relevant_tickets = self.frontier.find_relevant_tickets(user_query, n_results)
+        # relevant_tickets = self.frontier.find_relevant_tickets(user_query, n_results)
+        relevant_tickets_response = self.frontier.answer_question_with_rag(user_query, chat_history)
 
-        if relevant_tickets:
-            self.log(f"Frontier Agent found {len(relevant_tickets)} relevant tickets")
-
-        response['relevant_tickets'] = relevant_tickets
+        if relevant_tickets_response:
+            response['relevant_tickets_response'] = relevant_tickets_response
 
         # Always call MCP agent for database query (even if tickets found)
         self.log("Ensemble Agent delegating to MCP Agent for database query")
-        mcp_result = self.mcp.query_database(user_query, chat_history, schema)
+        mcp_result = self.mcp.answer_question_with_database(user_query, chat_history, schema)
 
         if mcp_result.get('success'):
             self.log(f"MCP Agent successfully queried database: {mcp_result.get('database')}")

@@ -10,6 +10,7 @@ from typing import List, Dict
 from log_utils import reformat
 from chatbot_agent_framework import ChatbotAgentFramework
 from langchain_core.messages import AIMessage, HumanMessage
+from auth import check_authentication, show_login_page, show_user_info
 
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -117,6 +118,12 @@ class App:
         return st.session_state.agent_framework
 
     def run(self):
+        # ------------------- Authentication Check -------------------
+        # Check if user is authenticated before showing the app
+        if not check_authentication():
+            show_login_page()
+            return
+
         def do_run(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
             """Run the agent framework and return new opportunities"""
             # Use the passed agent framework
@@ -241,6 +248,10 @@ class App:
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
+            # Display user info at top of sidebar
+            show_user_info()
+
+            st.markdown("---")
 
             # Show persistent connection status
             is_connected = 'db_connection_params' in st.session_state and st.session_state.db_connection_params is not None

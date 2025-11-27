@@ -175,6 +175,174 @@ Security Guidance:
 
 Please follow the repository coding style and run unit tests before submitting a PR.
 
+# Google Authentication Setup Guide
+
+This guide will walk you through setting up Google OAuth authentication for the Nysus Chatbot.
+
+## Prerequisites
+
+- Google Cloud Platform account
+- Access to Google Cloud Console
+- Python environment with pip
+
+## Step 1: Install Required Packages
+
+```powershell
+pip install -r requirements_auth.txt
+```
+
+Or install individually:
+```powershell
+pip install google-auth-oauthlib google-auth google-api-python-client python-dotenv
+```
+
+## Step 2: Create Google Cloud Project and OAuth Credentials
+
+### 2.1 Go to Google Cloud Console
+1. Visit [Google Cloud Console](https://console.cloud.google.com/)
+2. Sign in with your Google account
+
+### 2.2 Create or Select a Project
+1. Click on the project dropdown at the top of the page
+2. Click "New Project"
+3. Enter project name: `nysus-chatbot` (or any name you prefer)
+4. Click "Create"
+
+### 2.3 Enable Required APIs
+1. Go to **APIs & Services** > **Library**
+2. Search for "Google+ API" or "People API"
+3. Click on it and click "Enable"
+
+### 2.4 Configure OAuth Consent Screen
+1. Go to **APIs & Services** > **OAuth consent screen**
+2. Choose **Internal** (if you have Google Workspace) or **External**
+3. Fill in the required information:
+   - App name: `Nysus Chatbot`
+   - User support email: your email
+   - Developer contact information: your email
+4. Click "Save and Continue"
+5. On the Scopes page, you can skip (default scopes are sufficient)
+6. Click "Save and Continue"
+7. Review and click "Back to Dashboard"
+
+### 2.5 Create OAuth 2.0 Credentials
+1. Go to **APIs & Services** > **Credentials**
+2. Click **Create Credentials** > **OAuth 2.0 Client IDs**
+3. If prompted, configure the consent screen first (see step 2.4)
+4. Application type: **Web application**
+5. Name: `Nysus Chatbot Web Client`
+6. **Authorized redirect URIs** - Add these URIs:
+   - For local development: `http://localhost:8501`
+   - For production: `https://your-production-domain.com`
+7. Click **Create**
+8. A dialog will appear with your **Client ID** and **Client Secret**
+9. **IMPORTANT**: Copy these values immediately - you'll need them in the next step
+
+## Step 3: Configure Environment Variables
+
+### 3.1 Create .env File
+1. Copy the `.env.example` file to `.env`:
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Open the `.env` file in a text editor
+
+3. Replace the placeholder values with your actual credentials:
+   ```env
+   GOOGLE_CLIENT_ID=your_actual_client_id_here.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your_actual_client_secret_here
+   REDIRECT_URI=http://localhost:8501
+   ```
+
+### 3.2 For Production Deployment
+When deploying to production:
+1. Update `REDIRECT_URI` to your production URL
+2. Add the production URL to authorized redirect URIs in Google Cloud Console
+3. Ensure `.env` file is **NOT** committed to version control (add to `.gitignore`)
+
+## Step 4: Configure Allowed Email Domains
+
+The authentication is configured to only allow users with `@nysus.net` or `@nysus.com` email addresses.
+
+To modify allowed domains, edit `auth_config.py`:
+```python
+ALLOWED_DOMAINS = ["nysus.net", "nysus.com"]
+```
+
+## Step 5: Run the Application
+
+```powershell
+streamlit run nysus_chatbot.py
+```
+
+The application will:
+1. Show a login page
+2. Redirect to Google for authentication
+3. Verify the email domain
+4. Grant access only to authorized users
+
+## Security Features
+
+✓ **Domain Restriction**: Only `@nysus.net` and `@nysus.com` emails allowed
+✓ **Secure OAuth 2.0**: Industry-standard authentication
+✓ **Session Management**: 24-hour session timeout
+✓ **No Password Storage**: Authentication handled by Google
+
+## Troubleshooting
+
+### Error: "Redirect URI mismatch"
+- Ensure the redirect URI in Google Cloud Console exactly matches `REDIRECT_URI` in `.env`
+- Don't forget to include the protocol (`http://` or `https://`)
+- For Streamlit Cloud, use the full deployment URL
+
+### Error: "Access Denied: Only @nysus.net..."
+- User is trying to sign in with non-authorized email domain
+- Verify the email address belongs to nysus.net or nysus.com domain
+
+### Error: "Google OAuth credentials not configured"
+- The `.env` file is missing or variables are empty
+- Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set correctly
+
+### Error: "This app isn't verified"
+- This appears when using OAuth consent screen in "External" mode
+- Click "Advanced" > "Go to [App Name] (unsafe)" to proceed (for testing)
+- For production, complete Google's app verification process
+
+## Additional Configuration
+
+### Session Timeout
+To modify session duration, edit `auth_config.py`:
+```python
+SESSION_MAX_AGE = 86400  # 24 hours in seconds
+```
+
+### Adding More Allowed Domains
+Edit `auth_config.py`:
+```python
+ALLOWED_DOMAINS = ["nysus.net", "nysus.com", "example.com"]
+```
+
+## Production Deployment Notes
+
+### Streamlit Cloud
+1. Add environment variables in Streamlit Cloud settings (Secrets)
+2. Update `REDIRECT_URI` to your Streamlit Cloud app URL
+3. Add the Streamlit Cloud URL to authorized redirect URIs in Google Cloud Console
+
+### Other Cloud Providers
+1. Set environment variables through the provider's interface
+2. Ensure SSL/TLS is enabled (HTTPS)
+3. Update redirect URIs accordingly
+
+## Support
+
+For issues or questions:
+1. Check the troubleshooting section above
+2. Verify all environment variables are set correctly
+3. Ensure Google Cloud Console configuration matches your setup
+4. Check Streamlit logs for detailed error messages
+
 ## License
 
 This project does not include a license in the repository by default. Add a `LICENSE` file (e.g., Apache-2.0 or MIT) to indicate project licensing.

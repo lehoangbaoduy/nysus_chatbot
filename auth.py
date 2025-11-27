@@ -157,7 +157,7 @@ def show_login_page():
 
     st.markdown("""
         <div class="login-container">
-            <div class="login-title">🤖 Nysus Chatbot</div>
+            <div class="login-title">🤖 NAAS - Nysus Automated Assistant for MES</div>
             <div class="login-subtitle">AI-Powered Support Assistant</div>
         </div>
     """, unsafe_allow_html=True)
@@ -191,7 +191,6 @@ def show_user_info():
     if st.session_state.authenticated and st.session_state.user_info:
         user_info = st.session_state.user_info
         with st.sidebar:
-            st.markdown("---")
             st.markdown("### 🔐 User Info")
 
             # Display user profile picture and info side by side
@@ -200,11 +199,11 @@ def show_user_info():
                 with col1:
                     st.image(user_info['picture'], width=50)
                 with col2:
-                    st.markdown(f"<p style='margin-bottom: 0;'><strong>{user_info.get('name', 'User')}</strong></p>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='margin-top: 0; font-size: 0.85em;'>✉️ {user_info.get('email', '')}</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='margin-bottom: 0;'><strong>ⓘ {user_info.get('name', 'User')}</strong></p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='margin-top: 0; font-size: 0.85em;'>✉︎ {user_info.get('email', '')}</p>", unsafe_allow_html=True)
             else:
-                st.markdown(f"<p style='margin-bottom: 0;'><strong>{user_info.get('name', 'User')}</strong></p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='margin-top: 0; font-size: 0.85em;'>✉️ {user_info.get('email', '')}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='margin-bottom: 0;'><strong>ⓘ {user_info.get('name', 'User')}</strong></p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='margin-top: 0; font-size: 0.85em;'>✉︎ {user_info.get('email', '')}</p>", unsafe_allow_html=True)
 
             st.markdown("")  # Small spacing
             col1, col2, col3 = st.columns([1, 2, 1])

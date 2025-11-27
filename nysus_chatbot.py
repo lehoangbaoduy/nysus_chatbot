@@ -11,6 +11,7 @@ from log_utils import reformat
 from chatbot_agent_framework import ChatbotAgentFramework
 from langchain_core.messages import AIMessage, HumanMessage
 from auth import check_authentication, show_login_page, show_user_info
+from PIL import Image
 
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -118,6 +119,9 @@ class App:
         return st.session_state.agent_framework
 
     def run(self):
+        # ------------------- Streamlit UI Settings (Must be first) -------------------
+        st.set_page_config(page_title="NAAS - Nysus Automated Assistant for MES", page_icon="data/image/logo.png", layout="wide")
+
         # ------------------- Authentication Check -------------------
         # Check if user is authenticated before showing the app
         if not check_authentication():
@@ -226,10 +230,9 @@ class App:
 
         # ------------------- Load Custom CSS -------------------------
         dual_sidebar_css = load_css('styles/styles.css')
-
-        # ------------------- Streamlit UI Settings -------------------
-        st.set_page_config(page_title="Nysus Chatbot (v0.0.1)", page_icon="data/image/logo.ico", layout="wide")
         st.markdown(dual_sidebar_css, unsafe_allow_html=True)
+
+        # ------------------- Main App Title -------------------
         st.title("NAAS - Nysus Automated Assistant for MES")
 
         # Initialize session state

@@ -26,6 +26,7 @@ class Ticket(BaseModel):
     author: str
     subject: str
     description: str
+    score: float
 
 class TicketSelection(BaseModel):
     """

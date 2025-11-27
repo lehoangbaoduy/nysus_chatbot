@@ -56,10 +56,15 @@ class ChatbotAgentFramework:
             self.planner = PlanningAgent(collection=self.collection, db_connection_params=self.db_connection_params)
             self.log("Chatbot Agent Framework is ready")
 
-    def update_db_connection_params(self, db_connection_params):
+    def update_db_connection_params(self, db_connection_params=None):
         """Update database connection parameters in the framework and all agents"""
         self.log(f"Updating db_connection_params: {db_connection_params is not None}")
         self.db_connection_params = db_connection_params
+
+        # If db_connection_params is None, we're disconnecting - no need to update agents
+        if db_connection_params is None:
+            self.log("db_connection_params is None, skipping agent update")
+            return
 
         # If agents are already initialized, update their connection params
         if self.planner and hasattr(self.planner, 'ensemble') and hasattr(self.planner.ensemble, 'mcp'):

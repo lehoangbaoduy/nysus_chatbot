@@ -4,8 +4,6 @@ import threading
 import time
 import base64
 import pyodbc
-import re
-import sys
 import concurrent.futures
 import streamlit as st
 from typing import List, Dict
@@ -43,22 +41,6 @@ def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
         data = f.read()
     return base64.b64encode(data).decode()
-
-def extract_ticket_ids_and_urls(response: str) -> list:
-    """Extract ticket IDs and URLs from response"""
-    ticket_data = []
-    seen_tickets = set()
-
-    # Pattern to find markdown-style ticket links with URLs
-    url_pattern = r'\((http://tickets\.nysus\.net/scp/tickets\.php\?id=(\d+))\)'
-    url_matches = re.findall(url_pattern, response)
-
-    for url, ticket_id in url_matches:
-        if ticket_id not in seen_tickets:
-            ticket_data.append({'id': ticket_id, 'url': url})
-            seen_tickets.add(ticket_id)
-
-    return ticket_data
 
 def group_databases_and_tables(matching_databases: List[Dict[str, str]]) -> Dict[str, List[str]]:
     """
@@ -130,7 +112,8 @@ class App:
             st.session_state.agent_framework.init_agents_as_needed()
         else:
             # Update connection params in existing framework if needed
-            st.session_state.agent_framework.update_db_connection_params(st.session_state.db_connection_params)
+            params = st.session_state.get("db_connection_params", None)
+            st.session_state.agent_framework.update_db_connection_params(params)
         return st.session_state.agent_framework
 
     def run(self):
@@ -143,7 +126,7 @@ class App:
             # Result can be either a Dict (from Planning/Ensemble Agent) or List (from memory)
             if isinstance(result, dict):
                 # Response from Planning Agent with tickets, MCP data, and/or recently asked questions
-                rag_response = result.get('rag_response', None)
+                relevant_tickets = result.get('relevant_tickets', [])
                 mcp_response = result.get('mcp_response', None)
                 natural_response = result.get('natural_response', None)
                 recently_asked_questions = result.get('recently_asked_questions', [])
@@ -153,8 +136,9 @@ class App:
                 matching_databases = []
 
                 # Extract ticket numbers for sidebar
-                if rag_response:
-                    matching_tickets = extract_ticket_ids_and_urls(rag_response)
+                if relevant_tickets:
+                    for ticket in relevant_tickets:
+                        matching_tickets.append(ticket)
 
                 # Extract database info for sidebar
                 if mcp_response and mcp_response.get('database'):
@@ -176,13 +160,20 @@ class App:
                             response_text += f"{i}. {question.question}\n"
                             if hasattr(question, 'answer') and question.answer:
                                 response_text += f"   Answer: {question.answer[:200]}...\n\n"
-                elif rag_response or (mcp_response and mcp_response.get('success')):
+                elif relevant_tickets or (mcp_response and mcp_response.get('success')):
                     # Show relevant tickets and/or database response
-                    if rag_response:
-                        response_text = rag_response + "\n\n"
+                    if relevant_tickets:
+                        response_text = f"I found {len(relevant_tickets)} relevant tickets that might help answer your question.\n\n"
+                        for ticket in relevant_tickets:
+                            if hasattr(ticket, 'ticket_number'):
+                                response_text += f"**Ticket #{ticket.ticket_number}**: {ticket.subject if hasattr(ticket, 'subject') else 'No subject'}\n"
+                                if hasattr(ticket, 'description'):
+                                    response_text += f"Description: {ticket.description}\n\n"
+                                if hasattr(ticket, 'score'):
+                                    response_text += f"Relevance Score: {ticket.score}\n\n"
 
                     if mcp_response and mcp_response.get('success'):
-                        if rag_response:
+                        if relevant_tickets:
                             response_text += "\n\n---\n\n**Additional information from database:**\n\n"
                         response_text += mcp_response.get('user_message', '')
                 else:
@@ -245,16 +236,42 @@ class App:
             st.session_state.matching_databases = []
         if 'db_schema' not in st.session_state:
             st.session_state.db_schema = None
+        if 'show_connection_message' not in st.session_state:
+            st.session_state.show_connection_message = None
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
-            st.subheader("SQL Server Connection")
-            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#60820097\tsql\query", key="Host")
+
+            # Show persistent connection status
+            is_connected = 'db_connection_params' in st.session_state and st.session_state.db_connection_params is not None
+            if is_connected:
+                st.subheader("SQL Server Connection Status: 🟢")
+            else:
+                st.subheader("SQL Server Connection Status: 🔴")
+
+            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#94C6051A\tsql\query", key="Host")
             st.text_input("Port", value="1433", key="Port")
             st.text_input("User", value="nysususer", key="User")
             st.text_input("Password", type="password", value="nysus2444", key="Password")
 
-            if st.button("Connect to SQL Server"):
+            # Create two columns for the buttons
+            col1, col2 = st.columns(2)
+
+            with col1:
+                connect_button = st.button("Connect to SQL Server")
+
+            with col2:
+                disconnect_button = st.button("Disconnect from SQL Server", disabled=not is_connected)
+
+            # Show connection/disconnection messages if they exist
+            if st.session_state.show_connection_message:
+                if st.session_state.show_connection_message['type'] == 'success':
+                    st.success(st.session_state.show_connection_message['message'])
+                elif st.session_state.show_connection_message['type'] == 'error':
+                    st.error(st.session_state.show_connection_message['message'])
+                st.session_state.show_connection_message = None
+
+            if connect_button:
                 with st.spinner("Testing SQL Server connection..."):
                     try:
                         # Test basic connection
@@ -299,12 +316,39 @@ class App:
                                 schema = st.session_state.agent_framework.planner.ensemble.mcp.get_schema()
                                 if "❌" not in schema and "No user databases" not in schema:
                                     st.session_state.db_schema = schema
-                                    st.success(f"✅ Connected to SQL Server with {len(databases)} database(s) - Schema cached")
+                                    st.session_state.show_connection_message = {
+                                        'type': 'success',
+                                        'message': f"✅ Connected to SQL Server with {len(databases)} database(s) - Schema cached"
+                                    }
+                                    st.rerun()
                                 else:
-                                    st.error("❌ Connected but failed to fetch schema")
+                                    st.session_state.show_connection_message = {
+                                        'type': 'error',
+                                        'message': "❌ Connected but failed to fetch schema"
+                                    }
 
                     except Exception as e:
-                        st.error(f"❌ Connection failed: {e}")
+                        st.session_state.show_connection_message = {
+                            'type': 'error',
+                            'message': f"❌ Connection failed: {e}"
+                        }
+
+            if disconnect_button:
+                # Clear all database-related session state
+                if 'db_connection_params' in st.session_state:
+                    del st.session_state.db_connection_params
+                if 'db_schema' in st.session_state:
+                    del st.session_state.db_schema
+                if 'agent_framework' in st.session_state:
+                    st.session_state.agent_framework = None
+                if 'matching_databases' in st.session_state:
+                    st.session_state.matching_databases = []
+
+                st.session_state.show_connection_message = {
+                    'type': 'error',
+                    'message': "❌ Disconnected from SQL Server"
+                }
+                st.rerun()
 
             st.subheader("Upload additional document files")
             user_uploaded_files = st.file_uploader("", type=["csv", "xlsx", "txt", "pdf"], accept_multiple_files=True)
@@ -394,19 +438,35 @@ class App:
         with col_right:
             st.markdown('<div class="sidebar-section-header">🎫 Matching Tickets</div>', unsafe_allow_html=True)
             if st.session_state.matching_tickets:
-                for ticket in st.session_state.matching_tickets:
-                    # Handle both dict format (with 'id' and 'url') and legacy string format
-                    if isinstance(ticket, dict):
-                        ticket_id = ticket['id']
-                        ticket_url = ticket['url']
-                    else:
-                        ticket_id = str(ticket)
-                        ticket_url = f"http://tickets.nysus.net/scp/tickets.php?id={ticket_id}"
+                # Check if any ticket has a URL
+                has_any_url = any(hasattr(ticket, 'url') and ticket.url for ticket in st.session_state.matching_tickets)
 
-                    st.markdown(
-                        f'<div class="ticket-item"><a href="{ticket_url}" target="_blank">🎫 Ticket #{ticket_id}</a></div>',
-                        unsafe_allow_html=True
+                if not has_any_url:
+                    st.info("No matching tickets found yet. Ask a question to see related tickets!")
+                else:
+                    # Sort tickets by score in descending order (highest similarity first)
+                    sorted_tickets = sorted(
+                        st.session_state.matching_tickets,
+                        key=lambda t: t.score if hasattr(t, 'score') and t.score is not None else 0,
+                        reverse=True
                     )
+
+                    for ticket in sorted_tickets:
+                        ticket_number = str(ticket.ticket_number) if hasattr(ticket, 'ticket_number') else "Unknown"
+                        ticket_url = ticket.url if hasattr(ticket, 'url') and ticket.url else None
+
+                        if ticket_url:
+                            st.markdown(
+                                f'<div class="ticket-item"><a href="{ticket_url}" target="_blank">🎫 Ticket #{ticket_number}</a></div>',
+                                unsafe_allow_html=True
+                            )
+
+                            # Display similarity score with progress bar if available
+                            if ticket.score is not None:
+                                st.progress(ticket.score, text=f"Similarity: {ticket.score * 100:.1f}%")
+
+                            # Add a small spacing between tickets
+                            st.markdown('<div style="margin-bottom: 0.1rem;"></div>', unsafe_allow_html=True)
             else:
                 st.info("No matching tickets found yet. Ask a question to see related tickets!")
 

@@ -1,5 +1,4 @@
 import pyodbc
-import sys
 import json
 import re
 import urllib

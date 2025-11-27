@@ -1,4 +1,3 @@
-import sys
 from typing import Dict, List, Optional
 from agents.agent import Agent
 from agents.tickets import Ticket
@@ -42,11 +41,11 @@ class EnsembleAgent(Agent):
         self.log("Ensemble Agent delegating ticket search to Frontier Agent")
 
         # Use FrontierAgent to find relevant tickets from ChromaDB
-        # relevant_tickets = self.frontier.find_relevant_tickets(user_query, n_results)
-        relevant_tickets_response = self.frontier.answer_question_with_rag(user_query, chat_history)
+        relevant_tickets = self.frontier.find_relevant_tickets(user_query, n_results)
+        # relevant_tickets_response = self.frontier.answer_question_with_rag(user_query, chat_history)
 
-        if relevant_tickets_response:
-            response['relevant_tickets_response'] = relevant_tickets_response
+        if relevant_tickets:
+            response['relevant_tickets'] = relevant_tickets
 
         # Always call MCP agent for database query (even if tickets found)
         self.log("Ensemble Agent delegating to MCP Agent for database query")

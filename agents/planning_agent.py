@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict
 from agents.agent import Agent
-from agents.tickets import Company, Ticket
+from agents.base_classes import Company, Ticket
 from agents.scanner_agent import ScannerAgent
 from agents.ensemble_agent import EnsembleAgent
 from openai import OpenAI
@@ -22,24 +22,37 @@ class PlanningAgent(Agent):
         self.client = OpenAI()
         self.log("Planning Agent is ready")
 
-    def synthesize_response(self, user_query: str, tickets: List[Ticket], mcp_response: Optional[Dict], recently_asked_questions: List[str], chat_history: List = []) -> str:
+    def synthesize_response(self, user_query: str, tickets: List[Ticket], mcp_response: Optional[Dict], recently_asked_questions: List[str], relevant_document_content: str = None, chat_history: List = []) -> str:
         """
         Use LLM to generate a natural, conversational response based on retrieved information
         :param user_query: The user's original question
-        :param rag_response: Natural language response from RAG system (Frontier Agent)
+        :param tickets: List of relevant tickets
         :param mcp_response: Response from MCP database query
+        :param recently_asked_questions: List of recently asked similar questions
+        :param pdf_context: Context extracted from uploaded PDF files
         :param chat_history: Previous conversation context
         :return: Natural language response string
         """
         self.log("Synthesizing natural response using LLM")
 
+        # Build context from uploaded PDF files
+        relevant_document_context = ""
+        if relevant_document_content:
+            relevant_document_context = "\n\n=== Context from Uploaded Documents ===\n"
+            relevant_document_context += relevant_document_content[:2000] + "..." if len(relevant_document_content) > 2000 else relevant_document_content
+            relevant_document_context += "\n=== End of Document Context ===\n"
+            self.log(f"Including PDF context in synthesis ({len(relevant_document_content)} chars)")
+
         # Build context from recently asked questions
         questions_context = ""
         if recently_asked_questions:
-            questions_context = "\n\nRecently asked similar questions:\n"
+            questions_context = "\n\n=== Recently Asked Similar Questions ===\n"
             for i, question in enumerate(recently_asked_questions, 1):
                 if hasattr(question, 'question'):
                     questions_context += f"\n{i}. {question.question}\n"
+                    if hasattr(question, 'answer'):
+                        answer_preview = question.answer[:200] + "..." if len(question.answer) > 200 else question.answer
+                        questions_context += f"   Answer: {answer_preview}\n"
                 else:
                     questions_context += f"\n{i}. {question}\n"
 
@@ -80,10 +93,11 @@ class PlanningAgent(Agent):
                 history_context += f"{role}: {content}\n"
 
         system_prompt = """You are a helpful technical support assistant for a manufacturing execution system (MES) company.
-        Your role is to provide clear, conversational answers based on RAG responses from ticket knowledge base, database information, and cached questions.
+        Your role is to provide clear, conversational answers based on RAG responses from ticket knowledge base, database information, cached questions, and uploaded documents.
 
         Guidelines:
         - Be conversational and natural, not robotic
+        - If context from uploaded PDF documents is provided, also reference it in your answer.
         - If recently asked similar questions are provided, acknowledge them and reference relevant ones
         - If a RAG system response is provided, it contains the score of relevance for each ticket, try your best to convert to verbal description when mentioning relevance.
         - Summarize technical information in an accessible way.
@@ -92,11 +106,13 @@ class PlanningAgent(Agent):
         - If MCP response query IS NOT PROVIDED, do NOT mention anything about database query, just tell the user that MCP needs database connection to produce SQL query.
         - Stay focused on the user's question
         - If information is incomplete, acknowledge it naturally
+        - OUTPUT EACH SECTION CLEARLY AND SEPARATELY LIST OUT OF THE DIFFERENT CONTEXT SOURCES USED TO FORMULATE THE ANSWER. (E.G., "UPLOADED DOCUMENTS...", "RECENTLY ASKED QUESTIONS...", "RELEVANT TICKETS...", "DATABASE QUERY...")
         - Use a friendly, professional tone
         """
 
         user_prompt = f"""User Question: {user_query}
         {history_context}
+        {relevant_document_context}
         {questions_context}
         {ticket_context}
         {db_context}
@@ -104,9 +120,10 @@ class PlanningAgent(Agent):
         Please provide a natural, helpful response to the user's question based on the information above.
 
         IMPORTANT:
+        - If uploaded document context is provided, also reference it in your answer.
         - If a RAG response is provided, use it as the main source for ticket information
         - Synthesize the information into a coherent, conversational answer
-        - Don't just repeat the RAG response - enhance it with database results if available
+        - Don't just repeat the RAG response - enhance it with database results and document context if available
         - If similar questions were asked recently, mention that and use their context to inform your response
         """
 
@@ -129,6 +146,8 @@ class PlanningAgent(Agent):
             self.log(f"Error generating natural response: {e}")
             # Fallback to simple concatenation if LLM fails
             fallback = "I found some relevant information for your question.\n\n"
+            if relevant_document_context:
+                fallback += "Found relevant information in your uploaded documents.\n"
             if recently_asked_questions:
                 fallback += f"Found {len(recently_asked_questions)} similar question(s) asked recently.\n"
             if tickets:
@@ -159,24 +178,30 @@ class PlanningAgent(Agent):
         }
 
         self.log("Planning Agent is delegating to Scanner Agent to find recently asked questions")
-        selection = self.scanner.scan(memory=memory, user_query=user_query, uploaded_files=uploaded_files)
+        scanner_response = self.scanner.scan(memory=memory, user_query=user_query)
 
-        if selection and selection.questions:
-            self.log(f"Planning Agent received {len(selection.questions)} questions from Scanner")
+        # Extract PDF context from scanner response if available
+        if scanner_response and scanner_response.questions:
+            self.log(f"Planning Agent received {len(scanner_response.questions)} questions from Scanner")
 
             self.log("Planning Agent has completed a run")
-            response['recently_asked_questions'] = selection.questions
+            response['recently_asked_questions'] = scanner_response.questions
         else:
             self.log("No relevant recently asked questions found. Asking Ensemble Agent to search knowledge base.")
 
             # Use EnsembleAgent to answer the question by searching ChromaDB and potentially MCP server
             self.log("Planning Agent is delegating to Ensemble Agent to answer the user question")
-            ensemble_response = self.ensemble.answer_question(user_query, chat_history, n_results=5, schema=schema)
+            ensemble_response = self.ensemble.answer_question(user_query, chat_history, n_results=5, schema=schema, uploaded_files=uploaded_files)
 
             relevant_tickets = ensemble_response.get('relevant_tickets', None)
             if relevant_tickets:
                 self.log(f"Planning Agent received {len(relevant_tickets)} relevant tickets from Ensemble Agent")
                 response['relevant_tickets'] = relevant_tickets
+
+            relevant_document_content = ensemble_response.get('relevant_document_content', None)
+            if relevant_document_content:
+                self.log("Planning Agent received relevant uploaded document content from Ensemble Agent")
+                response['relevant_document_content'] = relevant_document_content
 
             mcp_response = ensemble_response.get('mcp_response', None)
             if mcp_response:
@@ -184,7 +209,14 @@ class PlanningAgent(Agent):
                 response['mcp_response'] = mcp_response
 
         # Generate natural response using LLM
-        natural_response = self.synthesize_response(user_query, response.get('relevant_tickets', []), response['mcp_response'], response['recently_asked_questions'], chat_history)
+        natural_response = self.synthesize_response(
+            user_query,
+            response.get('relevant_tickets', []),
+            response['mcp_response'],
+            response['recently_asked_questions'],
+            response['relevant_document_content'] if 'relevant_document_content' in response else None,
+            chat_history=chat_history
+        )
         response['natural_response'] = natural_response
 
         return response

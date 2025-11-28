@@ -44,8 +44,9 @@ class Question(BaseModel):
     database: dict
     resolution: bool
 
-class QuestionSelection(BaseModel):
+class ScannerAgentResponse(BaseModel):
     """
     A class to Represent a list of cached recently asked questions
     """
     questions: List[Question]
+    pdf_context: str = None  # Context extracted from uploaded PDF files

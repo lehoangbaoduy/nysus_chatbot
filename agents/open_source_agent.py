@@ -3,7 +3,7 @@ import re
 import datetime
 import sys
 from typing import List, Dict
-from agents.tickets import Ticket, Company, TicketSelection
+from agents.base_classes import Ticket, Company, TicketSelection
 
 # === EMBEDDINGS CONFIGURATION ===
 # To revert to OpenAI: uncomment the line below and comment out Ollama import

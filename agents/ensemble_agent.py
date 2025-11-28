@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 from agents.agent import Agent
-from agents.tickets import Ticket
+from agents.base_classes import Ticket
 from agents.frontier_agent import FrontierAgent
 # from agents.open_source_agent import OpenSourceAgent
 from agents.mcp_agent import MCPAgent
@@ -21,7 +21,7 @@ class EnsembleAgent(Agent):
         self.mcp = MCPAgent(db_connection_params)
         self.log("Ensemble Agent is ready")
 
-    def answer_question(self, user_query: str, chat_history: List = [], n_results: int = 5, schema: str = None) -> Dict:
+    def answer_question(self, user_query: str, chat_history: List = [], n_results: int = 5, schema: str = None, uploaded_files: List = []) -> Dict:
         """
         Answer a user's question by finding relevant tickets from the knowledge base.
         Or trying to use MCP server when connect to our SQL server to answer unanswered questions.
@@ -34,6 +34,7 @@ class EnsembleAgent(Agent):
         """
         response = {
             'relevant_tickets': [],
+            'relevant_document_content': None,
             'mcp_response': None
         }
 
@@ -42,10 +43,16 @@ class EnsembleAgent(Agent):
 
         # Use FrontierAgent to find relevant tickets from ChromaDB
         relevant_tickets = self.frontier.find_relevant_tickets(user_query, n_results)
-        # relevant_tickets_response = self.frontier.answer_question_with_rag(user_query, chat_history)
 
         if relevant_tickets:
             response['relevant_tickets'] = relevant_tickets
+
+        if uploaded_files:
+            # Use FrontierAgent to find relevant uploaded files content
+            relevant_document_content = self.frontier.find_relevant_uploaded_content(user_query, uploaded_files)
+
+        if relevant_document_content:
+            response['relevant_document_content'] = relevant_document_content
 
         # Always call MCP agent for database query (even if tickets found)
         self.log("Ensemble Agent delegating to MCP Agent for database query")

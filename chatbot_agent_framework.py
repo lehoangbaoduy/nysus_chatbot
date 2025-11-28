@@ -6,7 +6,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import chromadb
 from agents.planning_agent import PlanningAgent
-from agents.tickets import Ticket
+from agents.base_classes import Ticket
 from sklearn.manifold import TSNE
 import numpy as np
 

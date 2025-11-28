@@ -8,8 +8,11 @@ from openai import OpenAI
 # To use Ollama embeddings, you'd need to recreate the vectorstore with:
 # from langchain_ollama import OllamaEmbeddings
 from typing import List
-from agents.tickets import Ticket, Company
+from agents.base_classes import Ticket, Company
 from langchain_chroma import Chroma
+from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import CharacterTextSplitter
+from PyPDF2 import PdfReader
 from agents.agent import Agent
 
 class FrontierAgent(Agent):
@@ -179,132 +182,147 @@ class FrontierAgent(Agent):
 
         return tickets
 
-    # def rerank(self, question, chunks):
-    #     system_prompt = """
-    #         You are a document re-ranker.
-    #         You are provided with a question and a list of relevant chunks of text from a query of a knowledge base.
-    #         The chunks are provided in the order they were retrieved; this should be approximately ordered by relevance, but you may be able to improve on that.
-    #         You must rank order the provided chunks by relevance to the question, with the most relevant chunk first.
-    #         Reply only with the list of ranked chunk ids, nothing else. Include all the chunk ids you are provided with, reranked.
-    #         """
+    def get_pdf_text(self, pdf_docs: List) -> str:
+        """
+        Extract text from uploaded PDF files
+        :param pdf_docs: List of PDF file objects
+        :return: Combined text from all PDFs
+        """
+        text = ""
+        for pdf in pdf_docs:
+            try:
+                pdf_reader = PdfReader(pdf)
+                for page in pdf_reader.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted
+            except Exception as e:
+                self.log(f"Error reading PDF: {e}")
+        return text
 
-    #     user_prompt = f"The user has asked the following question:\n\n{question}\n\nOrder all the chunks of text by relevance to the question, from most relevant to least relevant. Include all the chunk ids you are provided with, reranked.\n\n"
-    #     user_prompt += "Here are the chunks:\n\n"
-    #     for index, chunk in enumerate(chunks):
-    #         user_prompt += f"# CHUNK ID: {index + 1}:\n\n{chunk.page_content}\n\n"
-    #     user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
-    #     messages = [
-    #         {"role": "system", "content": system_prompt},
-    #         {"role": "user", "content": user_prompt},
-    #     ]
+    def get_text_chunks(self, text: str) -> List[str]:
+        """
+        Split text into chunks for embedding
+        :param text: Raw text to split
+        :return: List of text chunks
+        """
+        text_splitter = CharacterTextSplitter(
+            separator="\n",
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len
+        )
+        chunks = text_splitter.split_text(text)
+        return chunks
 
-    #     class RankOrder(BaseModel):
-    #         order: list[int] = Field(
-    #             description="The order of relevance of chunks, from most relevant to least relevant, by chunk id number"
-    #         )
+    def get_vectorstore(self, text_chunks: List[str]):
+        """
+        Create FAISS vectorstore from text chunks
+        :param text_chunks: List of text chunks
+        :return: FAISS vectorstore
+        """
+        vectorstore = FAISS.from_texts(texts=text_chunks, embedding=self.embeddings)
+        return vectorstore
 
-    #     response = self.client.chat.completions.parse(model=self.MODEL, messages=messages, response_format=RankOrder)
-    #     reply = response.choices[0].message.content
-    #     order = RankOrder.model_validate_json(reply).order
+    def query_vectorstore(self, vectorstore, query: str, k: int = 5) -> List[str]:
+        """
+        Query the vectorstore for relevant documents
+        :param vectorstore: FAISS vectorstore
+        :param query: User query
+        :param k: Number of results to return
+        :return: List of relevant document chunks
+        """
+        try:
+            docs = vectorstore.similarity_search_with_score(query, k=k)
+            return [doc.page_content for doc, score in docs]
+        except Exception as e:
+            self.log(f"Error querying vectorstore: {e}")
+            return []
 
-    #     # Validate indices: filter out invalid indices and handle edge cases
-    #     valid_indices = []
-    #     chunks_len = len(chunks)
-    #     for i in order:
-    #         # Check if index is within valid range (1-based indexing)
-    #         if 1 <= i <= chunks_len and (i - 1) not in valid_indices:
-    #             valid_indices.append(i - 1)
+    def invoke_LLM_for_uploaded_content(self, user_query, pdf_context) -> str:
+        """
+        Create a user prompt for OpenAI based on the matching uploaded file content
+        and call LLM to extract relevant information
+        """
+        system_prompt = """
+        You are a helpful assistant analyzing PDF documents to answer user questions.
+        You will be provided with relevant excerpts from PDF documents that were uploaded by the user.
 
-    #     # If no valid indices or missing chunks, return original order
-    #     if not valid_indices:
-    #         self.log(f"Warning: No valid reranked indices returned, using original order")
-    #         return chunks
+        Your task is to:
+        1. Carefully analyze the provided PDF content
+        2. Extract information that is relevant to the user's question
+        3. Provide a clear, accurate, and comprehensive answer based on the PDF content
+        4. If the PDF content doesn't contain relevant information to answer the question, say so
+        5. Cite specific details from the PDF when possible
 
-    #     # Add any missing chunks at the end
-    #     result = [chunks[idx] for idx in valid_indices]
-    #     for idx in range(chunks_len):
-    #         if idx not in valid_indices:
-    #             result.append(chunks[idx])
+        Be accurate and only use information present in the provided PDF excerpts.
+        """
 
-    #     return result
+        user_prompt = f"""
+        Based on the following excerpts from the uploaded PDF document(s):
 
-    # def make_rag_messages(self, question, history, chunks):
-    #     context = "\n\n".join(
-    #         f"Extract from {chunk.metadata['source']}:\n{chunk.page_content}" for chunk in chunks
-    #     )
-    #     system_prompt = self.SYSTEM_PROMPT.format(context=context)
+        ---PDF CONTENT---
+        {pdf_context}
+        ---END PDF CONTENT---
 
-    #     # Validate and filter history messages to ensure they have required fields
-    #     valid_history = []
-    #     for msg in history:
-    #         if isinstance(msg, dict) and "role" in msg and "content" in msg:
-    #             # Only include valid roles
-    #             if msg["role"] in ["user", "assistant", "system"]:
-    #                 valid_history.append({"role": msg["role"], "content": msg["content"]})
+        Please answer this question: {user_query}
+        """
 
-    #     return (
-    #         [{"role": "system", "content": system_prompt}]
-    #         + valid_history
-    #         + [{"role": "user", "content": question}]
-    #     )
+        try:
+            self.log("Calling LLM to analyze PDF content")
+            response = self.client.chat.completions.create(
+                model=self.MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2000
+            )
 
-    # def merge_chunks(self, chunks, reranked):
-    #     merged = chunks[:]
-    #     existing = [chunk.page_content for chunk in chunks]
-    #     for chunk in reranked:
-    #         if chunk.page_content not in existing:
-    #             merged.append(chunk)
-    #     return merged
+            result = response.choices[0].message.content
+            self.log(f"LLM analysis completed: {len(result)} characters")
+            return result
 
-    # def fetch_context_unranked(self, question):
-    #     # Use LangChain's vectorstore similarity search instead of raw ChromaDB query
-    #     # This properly handles embeddings and returns results in the expected format
-    #     results = self.vectorstore.similarity_search_with_score(question, k=self.RETRIEVAL_K)
-    #     chunks = []
+        except Exception as e:
+            self.log(f"Error calling LLM for PDF analysis: {e}")
+            return f"Error analyzing PDF content: {str(e)}"
 
-    #     class Result(BaseModel):
-    #         page_content: str
-    #         metadata: dict
-    #         score: float
 
-    #     for doc, score in results:
-    #         chunks.append(Result(page_content=doc.page_content, metadata=doc.metadata, score=score))
-    #     return chunks
+    def find_relevant_uploaded_content(self, user_query: str, uploaded_files: List = []) -> str:
+        # Process uploaded PDF files if any
+        pdf_context = None
+        if uploaded_files:
+            self.log(f"Processing {len(uploaded_files)} uploaded PDF file(s)")
+            self.log(f"Uploaded files: {[f.name for f in uploaded_files]}")
+            try:
+                # Extract text from PDFs
+                raw_text = self.get_pdf_text(uploaded_files)
 
-    # def rewrite_query(self, user_query, history=[]):
-    #     """Rewrite the user's query to be a more specific question that is more likely to surface relevant content in the Knowledge Base."""
-    #     message = f"""
-    #         You are in a conversation with a user, answering questions of the user to get related tickets.
-    #         You are about to look up information in a Knowledge Base to answer the user's question.
+                if raw_text.strip():
+                    self.log(f"Extracted {len(raw_text)} characters from PDFs")
 
-    #         This is the history of your conversation so far with the user:
-    #         {history}
+                    # Get text chunks
+                    text_chunks = self.get_text_chunks(raw_text)
+                    self.log(f"Split text into {len(text_chunks)} chunks")
 
-    #         And this is the user's current question:
-    #         {user_query}
+                    # Create vectorstore
+                    vectorstore = self.get_vectorstore(text_chunks)
+                    self.log("Created vectorstore from PDF content")
 
-    #         Respond only with a short, refined question that you will use to search the Knowledge Base.
-    #         It should be a short specific question most likely to surface content. Focus on the question details.
-    #         IMPORTANT: Respond ONLY with the precise knowledgebase query, nothing else.
-    #         """
-    #     response = self.client.chat.completions.parse(model=self.MODEL, messages=[{"role": "system", "content": message}])
-    #     return response.choices[0].message.content
+                    # Query vectorstore for relevant content
+                    relevant_docs = self.query_vectorstore(vectorstore, user_query, k=3)
+                    self.log(f"Retrieved {len(relevant_docs)} relevant chunks from PDFs")
 
-    # def fetch_context(self, user_query: str) -> list:
-    #     rewritten_question = self.rewrite_query(user_query)
-    #     chunks1 = self.fetch_context_unranked(user_query)
-    #     chunks2 = self.fetch_context_unranked(rewritten_question)
-    #     chunks = self.merge_chunks(chunks1, chunks2)
-    #     reranked = self.rerank(user_query, chunks)
-    #     return reranked[:self.FINAL_K]
+                    # Combine relevant chunks into context
+                    if relevant_docs:
+                        pdf_context = "\n\n".join(relevant_docs)
+                else:
+                    self.log("No text could be extracted from PDFs")
+            except Exception as e:
+                self.log(f"Error processing PDFs: {e}")
 
-    # def answer_question_with_rag(self, user_query: str, chat_history: list[dict] = []) -> tuple[str, list]:
-    #     """
-    #     Answer a question using RAG and return the answer and the retrieved context
-    #     """
-    #     self.log(f"Frontier Agent is searching ChromaDB for tickets relevant to: '{user_query}'")
-    #     chunks = self.fetch_context(user_query)
-    #     self.log(f"Frontier Agent found {len(chunks)} chunks of vectors that could contain relevant tickets")
-    #     messages = self.make_rag_messages(user_query, chat_history, chunks)
-    #     response = self.client.chat.completions.parse(model=self.MODEL, messages=messages)
-    #     return response.choices[0].message.content, chunks
+            result = self.invoke_LLM_for_uploaded_content(user_query, pdf_context)
+            self.log("Frontier Agent completed analysis of uploaded PDF content")
+            return result
+

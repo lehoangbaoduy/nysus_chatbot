@@ -4,7 +4,7 @@ from typing import Optional, List
 # OpenAI import (commented out for cost savings during testing)
 # from openai import OpenAI
 from langchain_ollama import ChatOllama
-from agents.tickets import QuestionSelection
+from agents.base_classes import ScannerAgentResponse
 from agents.agent import Agent
 
 
@@ -72,7 +72,7 @@ class ScannerAgent(Agent):
         user_prompt += self.USER_PROMPT_SUFFIX
         return user_prompt
 
-    def scan(self, memory: List[dict]=[], user_query: str = "", uploaded_files: List = []) -> Optional[QuestionSelection]:
+    def scan(self, memory: List[dict]=[], user_query: str = "", uploaded_files: List = []) -> Optional[ScannerAgentResponse]:
         """
         Scan through cached recently asked questions to find ones that match the user query
         Use OpenAI to select the most relevant ones
@@ -97,7 +97,7 @@ class ScannerAgent(Agent):
             #         {"role": "system", "content": self.SYSTEM_PROMPT},
             #         {"role": "user", "content": user_prompt}
             #     ],
-            #     response_format=QuestionSelection
+            #     response_format=ScannerAgentResponse
             # )
             # result = result.choices[0].message.parsed
 
@@ -105,7 +105,7 @@ class ScannerAgent(Agent):
             full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
             response = self.llm.invoke(full_prompt)
             result_json = json.loads(response.content)
-            result = QuestionSelection(**result_json)
+            result = ScannerAgentResponse(**result_json)
 
             self.log(f"Scanner Agent received {len(result.questions) if hasattr(result, 'questions') else 0} selected recently asked questions from LLM")
             return result

@@ -5,6 +5,7 @@ import time
 import base64
 import pyodbc
 import concurrent.futures
+import sys
 import streamlit as st
 from typing import List, Dict
 from log_utils import reformat
@@ -108,11 +109,16 @@ class App:
 
     def get_agent_framework(self, db_connection_params=None):
         if st.session_state.agent_framework is None:
+            sys.stdout.flush()
             # Create framework once with connection params from session state if available
             params = db_connection_params or st.session_state.get("db_connection_params", None)
+            sys.stdout.flush()
             st.session_state.agent_framework = ChatbotAgentFramework(params)
+            sys.stdout.flush()
             st.session_state.agent_framework.init_agents_as_needed()
+            sys.stdout.flush()
         else:
+            sys.stdout.flush()
             # Update connection params in existing framework if needed
             params = st.session_state.get("db_connection_params", None)
             st.session_state.agent_framework.update_db_connection_params(params)
@@ -248,6 +254,8 @@ class App:
             st.session_state.db_schema = None
         if 'show_connection_message' not in st.session_state:
             st.session_state.show_connection_message = None
+        if 'user_uploaded_files' not in st.session_state:
+            st.session_state.user_uploaded_files = []
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
@@ -365,7 +373,9 @@ class App:
                 st.rerun()
 
             st.subheader("Upload additional document files")
-            user_uploaded_files = st.file_uploader("", type=["csv", "xlsx", "txt", "pdf"], accept_multiple_files=True)
+            user_uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
+            # Store uploaded files in session state for access outside sidebar
+            st.session_state.user_uploaded_files = user_uploaded_files if user_uploaded_files else []
 
             st.subheader("Background Image Selector")
             backgrounds = {"Nysus Tiles": "data/image/background.png", "Nysus More Tiles": "data/image/background2.png"}
@@ -400,8 +410,19 @@ class App:
 
                     # Capture the values we need before threading
                     chat_history = st.session_state.chat_history.copy()  # Make a copy!
-                    # Get or create agent framework BEFORE threading
-                    current_agent_framework = self.get_agent_framework()
+                    # Get uploaded files from session state
+                    uploaded_files = st.session_state.get('user_uploaded_files', [])
+                    sys.stdout.flush()
+                    try:
+                        current_agent_framework = self.get_agent_framework()
+                        sys.stdout.flush()
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        sys.stdout.flush()
+                        st.error(f"Failed to initialize chatbot: {e}")
+                        st.stop()
+
                     # Get cached schema if available
                     cached_schema = st.session_state.get('db_schema', None)
 
@@ -410,7 +431,7 @@ class App:
                         return run_with_logging(
                             user_query,
                             chat_history,
-                            user_uploaded_files,
+                            uploaded_files,
                             current_agent_framework,
                             cached_schema
                         )
@@ -480,7 +501,7 @@ class App:
                                 st.progress(ticket.score, text=f"Similarity: {ticket.score * 100:.1f}%")
 
                             # Add a small spacing between tickets
-                            st.markdown('<div style="margin-bottom: 0.1rem;"></div>', unsafe_allow_html=True)
+                            st.markdown('<div style="margin-bottom: 0.02rem;"></div>', unsafe_allow_html=True)
             else:
                 st.info("No matching tickets found yet. Ask a question to see related tickets!")
 

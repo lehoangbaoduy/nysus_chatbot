@@ -14,7 +14,7 @@ class ScannerAgent(Agent):
     # MODEL = "gpt-4o-mini"
     # Ollama model (using for testing)
     MODEL = "llama3.2"  # or "mistral", "qwen2.5", etc.
-    MEMORY_FILE = "memory.json"
+    MEMORY_FILE = "data/simulated_table_data/memory.json"
 
     SYSTEM_PROMPT = """You identify and summarize the 5 most detailed tickets from a list, by selecting tickets that have the most detailed, high quality description and the most clear resolution.
     Respond strictly in JSON with no explanation, using this format. You should provide the ticket number as a number derived from the description that might start with #XXXXX. If the ticket number and its content aren't clear, do not include that ticket in your response.

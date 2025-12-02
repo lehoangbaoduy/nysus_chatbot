@@ -106,7 +106,6 @@ class PlanningAgent(Agent):
         - If MCP response query IS NOT PROVIDED, do NOT mention anything about database query, just tell the user that MCP needs database connection to produce SQL query.
         - Stay focused on the user's question
         - If information is incomplete, acknowledge it naturally
-        - OUTPUT EACH SECTION CLEARLY AND SEPARATELY LIST OUT OF THE DIFFERENT CONTEXT SOURCES USED TO FORMULATE THE ANSWER. (E.G., "UPLOADED DOCUMENTS...", "RECENTLY ASKED QUESTIONS...", "RELEVANT TICKETS...", "DATABASE QUERY...")
         - Use a friendly, professional tone
         """
 

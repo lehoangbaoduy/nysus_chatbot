@@ -6,6 +6,7 @@ import base64
 import pyodbc
 import concurrent.futures
 import sys
+import json
 import streamlit as st
 from typing import List, Dict
 from log_utils import reformat
@@ -256,6 +257,12 @@ class App:
             st.session_state.show_connection_message = None
         if 'user_uploaded_files' not in st.session_state:
             st.session_state.user_uploaded_files = []
+        if 'clearing_chat' not in st.session_state:
+            st.session_state.clearing_chat = False
+        if 'show_popular_questions' not in st.session_state:
+            st.session_state.show_popular_questions = True
+        if 'user_has_asked_question' not in st.session_state:
+            st.session_state.user_has_asked_question = False
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
@@ -271,7 +278,7 @@ class App:
             else:
                 st.subheader("SQL Server Connection Status: 🔴")
 
-            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#94C6051A\tsql\query", key="Host")
+            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#A821C174\tsql\query", key="Host")
             st.text_input("Port", value="1433", key="Port")
             st.text_input("User", value="nysususer", key="User")
             st.text_input("Password", type="password", value="nysus2444", key="Password")
@@ -398,7 +405,17 @@ class App:
                     st.markdown(message.content)
 
             user_query = st.chat_input("Type a message...")
+
+            # Check if there's a submitted question from popular questions button
+            if 'submitted_question' in st.session_state and st.session_state.submitted_question:
+                user_query = st.session_state.submitted_question
+                st.session_state.submitted_question = None  # Clear it after use
+
             if user_query and user_query.strip():
+                # Mark that user has asked a question and hide popular questions
+                st.session_state.user_has_asked_question = True
+                st.session_state.show_popular_questions = False
+
                 # Add human message to chat history
                 st.session_state.chat_history.append(HumanMessage(content=user_query))
                 with st.chat_message("Human", avatar="🦖"):
@@ -526,6 +543,50 @@ class App:
                     )
             else:
                 st.info("No database queries executed yet. Connected databases will appear here after queries.")
+
+            # Popular Questions Section - Only show if user hasn't asked a question yet
+            if st.session_state.show_popular_questions:
+                st.markdown('<div class="sidebar-section-header">💡 Popular Questions</div>', unsafe_allow_html=True)
+
+                # Load popular questions from JSON
+                try:
+                    with open('data/simulated_table_data/popular_questions.json', 'r') as f:
+                        popular_questions = json.load(f)
+
+                    # Initialize session state for button clicks if not exists
+                    if 'submitted_question' not in st.session_state:
+                        st.session_state.submitted_question = None
+
+                    # Create buttons for each popular question
+                    for key, question in popular_questions.items():
+                        # Get first 5 words for button label
+                        words = question.split()
+                        button_label = ' '.join(words[:5])
+                        if len(words) > 5:
+                            button_label += "..."
+
+                        # Create button with tooltip
+                        if st.button(f"❓ {button_label}", key=f"popular_{key}", use_container_width=True, help=question):
+                            # Store the full question to be submitted and hide popular questions
+                            st.session_state.submitted_question = question
+                            st.session_state.show_popular_questions = False
+                            st.session_state.user_has_asked_question = True
+                            st.rerun()
+                except FileNotFoundError:
+                    st.warning("Popular questions file not found.")
+                except json.JSONDecodeError:
+                    st.error("Error loading popular questions.")
+
+            st.markdown("---", unsafe_allow_html=True)
+            # Clear chat history button
+            if st.button("🗑️ Clear Chat History", use_container_width=True, type="secondary"):
+                # Reset all chat-related session state
+                st.session_state.chat_history = [AIMessage(content="Hello! I'm a Nysus automated assistant. Ask me anything about MES!")]
+                st.session_state.matching_tickets = []
+                st.session_state.matching_databases = []
+                st.session_state.show_popular_questions = True
+                st.session_state.user_has_asked_question = False
+                st.rerun()
 
 if __name__=="__main__":
     App().run()

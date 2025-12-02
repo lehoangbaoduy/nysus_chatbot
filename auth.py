@@ -170,7 +170,7 @@ def show_login_page():
         else:
             st.info("🔐 Please sign in with your Nysus email address")
 
-        if st.button("🔑 Sign in with Google", use_container_width=True, type="primary"):
+        if st.button("Sign in with Google", use_container_width=True, type="secondary", icon="🔑"):
             # Clear access denied flag when retrying
             st.session_state.access_denied = False
             authorization_url, state = get_authorization_url()

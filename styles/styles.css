@@ -13,7 +13,7 @@
     padding-bottom: 5rem;
 }
 
-/* Fix chat input at bottom */
+/* Fix chat input container at bottom */
 .stChatFloatingInputContainer {
     position: fixed !important;
     bottom: 0 !important;

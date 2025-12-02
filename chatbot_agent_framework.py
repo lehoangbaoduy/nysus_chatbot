@@ -36,7 +36,7 @@ def init_logging():
 class ChatbotAgentFramework:
 
     DB = "data/documents/os_tickets_vectorstore"
-    MEMORY_FILENAME = "memory.json"
+    MEMORY_FILENAME = "data/simulated_table_data/memory.json"
 
     def __init__(self, db_connection_params=None):
         init_logging()

@@ -51,8 +51,8 @@ class EnsembleAgent(Agent):
             # Use FrontierAgent to find relevant uploaded files content
             relevant_document_content = self.frontier.find_relevant_uploaded_content(user_query, uploaded_files)
 
-        if relevant_document_content:
-            response['relevant_document_content'] = relevant_document_content
+            if relevant_document_content:
+                response['relevant_document_content'] = relevant_document_content
 
         # Always call MCP agent for database query (even if tickets found)
         self.log("Ensemble Agent delegating to MCP Agent for database query")

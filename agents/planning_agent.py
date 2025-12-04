@@ -172,6 +172,7 @@ class PlanningAgent(Agent):
             'recently_asked_questions': [],
             'rag_response': None,
             'rag_chunks': [],
+            'relevant_document_sources': [],
             'mcp_response': None,
             'natural_response': ""
         }
@@ -201,6 +202,11 @@ class PlanningAgent(Agent):
             if relevant_document_content:
                 self.log("Planning Agent received relevant uploaded document content from Ensemble Agent")
                 response['relevant_document_content'] = relevant_document_content
+
+            relevant_document_sources = ensemble_response.get('relevant_document_sources', [])
+            if relevant_document_sources:
+                self.log(f"Planning Agent received document sources from {len(relevant_document_sources)} file(s)")
+                response['relevant_document_sources'] = relevant_document_sources
 
             mcp_response = ensemble_response.get('mcp_response', None)
             if mcp_response:

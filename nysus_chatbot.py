@@ -102,7 +102,6 @@ def set_background(png_file, opacity):
     st.markdown(page_bg_img, unsafe_allow_html=True)
 
 class App:
-
     def __init__(self):
         # Initialize agent framework in session state if not exists
         if 'agent_framework' not in st.session_state:
@@ -135,7 +134,7 @@ class App:
             show_login_page()
             return
 
-        def do_run(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
+        def initiate(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
             """Run the agent framework and return new opportunities"""
             # Use the passed agent framework
             result = agent_framework.run(user_query, chat_history, uploaded_files, schema)
@@ -148,10 +147,12 @@ class App:
                 mcp_response = result.get('mcp_response', None)
                 natural_response = result.get('natural_response', None)
                 recently_asked_questions = result.get('recently_asked_questions', [])
+                relevant_document_sources = result.get('relevant_document_sources', [])
 
                 response_text = ""
                 matching_tickets = []
                 matching_databases = []
+                matching_documents = []
 
                 # Extract ticket numbers for sidebar
                 if relevant_tickets:
@@ -164,6 +165,10 @@ class App:
                         'database': mcp_response['database'] if 'database' in mcp_response else 'N/A',
                         'table': mcp_response['table'] if 'table' in mcp_response else 'N/A'
                     })
+
+                # Extract document sources for sidebar
+                if relevant_document_sources:
+                    matching_documents = relevant_document_sources
 
                 # Use natural LLM-generated response if available
                 # This response already synthesizes tickets, questions, and database results
@@ -203,17 +208,19 @@ class App:
                 return {
                     "response": response_text,
                     "matching_tickets": matching_tickets,
-                    "matching_databases": matching_databases
+                    "matching_databases": matching_databases,
+                    "matching_documents": matching_documents
                 }
 
-        def run_with_logging(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
+        # Everything happens here
+        def initiate_with_logging(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
             """Run agent with logging capability"""
             log_queue = queue.Queue()
             result_queue = queue.Queue()
             setup_logging(log_queue)
 
             def worker():
-                result = do_run(user_query, chat_history, uploaded_files, agent_framework, schema)
+                result = initiate(user_query, chat_history, uploaded_files, agent_framework, schema)
                 result_queue.put(result)
 
             thread = threading.Thread(target=worker)
@@ -251,6 +258,8 @@ class App:
             st.session_state.matching_tickets = []
         if "matching_databases" not in st.session_state:
             st.session_state.matching_databases = []
+        if "matching_documents" not in st.session_state:
+            st.session_state.matching_documents = []
         if 'db_schema' not in st.session_state:
             st.session_state.db_schema = None
         if 'show_connection_message' not in st.session_state:
@@ -263,6 +272,8 @@ class App:
             st.session_state.show_popular_questions = True
         if 'user_has_asked_question' not in st.session_state:
             st.session_state.user_has_asked_question = False
+        if 'pdf_modal_data' not in st.session_state:
+            st.session_state.pdf_modal_data = None
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
@@ -278,7 +289,7 @@ class App:
             else:
                 st.subheader("SQL Server Connection Status: 🔴")
 
-            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#A821C174\tsql\query", key="Host")
+            st.text_input("Host", value=r"np:\\.\pipe\LOCALDB#F0F12130\tsql\query", key="Host")
             st.text_input("Port", value="1433", key="Port")
             st.text_input("User", value="nysususer", key="User")
             st.text_input("Password", type="password", value="nysus2444", key="Password")
@@ -381,21 +392,52 @@ class App:
 
             st.subheader("Upload additional document files")
             user_uploaded_files = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
-            # Store uploaded files in session state for access outside sidebar
-            st.session_state.user_uploaded_files = user_uploaded_files if user_uploaded_files else []
 
-            st.subheader("Background Image Selector")
-            backgrounds = {"Nysus Tiles": "data/image/background.png", "Nysus More Tiles": "data/image/background2.png"}
-            choice = st.selectbox("Choose a background:", list(backgrounds.keys()))
-            opacity = st.sidebar.slider("Background opacity", 0.0, 1.0, 0.1, 0.05)
-            st.image(backgrounds[choice], width=150, caption=f"Preview: {choice}")
-            if st.button("Set background"):
-                st.session_state.background_path = backgrounds[choice]
-            if "background_path" in st.session_state:
-                set_background(st.session_state.background_path, opacity)
+            # Filter out duplicate files based on filename
+            if user_uploaded_files:
+                seen_names = set()
+                unique_files = []
+                duplicate_names = []
+
+                # Debug: Show what we received
+                st.info(f"File uploader returned {len(user_uploaded_files)} file(s)")
+                for idx, file in enumerate(user_uploaded_files):
+                    st.text(f"  {idx+1}: {file.name} (id: {id(file)})")
+
+                for file in user_uploaded_files:
+                    if file.name not in seen_names:
+                        seen_names.add(file.name)
+                        unique_files.append(file)
+                    else:
+                        duplicate_names.append(file.name)
+
+                # Store only unique files in session state
+                st.session_state.user_uploaded_files = unique_files
+
+                # Show info about unique files stored
+                st.success(f"Stored {len(unique_files)} unique file(s) in session state")
+
+                # Show warning if duplicates were found
+                if duplicate_names:
+                    st.warning(f"⚠️ Duplicate file(s) removed: {', '.join(set(duplicate_names))}")
+            else:
+                st.session_state.user_uploaded_files = []
+
+            st.markdown("---", unsafe_allow_html=True)
+
+            # Clear chat history button
+            if st.button("🗑️ Clear Chat History", use_container_width=True, type="secondary"):
+                # Reset all chat-related session state
+                st.session_state.chat_history = [AIMessage(content="Hello! I'm a Nysus automated assistant. Ask me anything about MES!")]
+                st.session_state.matching_tickets = []
+                st.session_state.matching_databases = []
+                st.session_state.matching_documents = []
+                st.session_state.show_popular_questions = True
+                st.session_state.user_has_asked_question = False
+                st.rerun()
 
         # ------------------- Main Layout - Chat and Right Sidebar -------------------
-        col_chat, col_right = st.columns([3, 1])
+        col_chat, col_spacer, col_right = st.columns([3.8, 0.1, 1.1])
 
         # Chat Section (Middle Column)
         with col_chat:
@@ -445,7 +487,7 @@ class App:
 
                     # THIS IS THE PLACE FOR ALL BACKEND AI STUFF STARTS
                     def get_response_wrapper():
-                        return run_with_logging(
+                        return initiate_with_logging(
                             user_query,
                             chat_history,
                             uploaded_files,
@@ -472,10 +514,12 @@ class App:
                         response = result["response"]
                         st.session_state.matching_tickets = result.get("matching_tickets", [])
                         st.session_state.matching_databases = result.get("matching_databases", [])
+                        st.session_state.matching_documents = result.get("matching_documents", [])
                     else:
                         response = result
                         st.session_state.matching_tickets = []
                         st.session_state.matching_databases = []
+                        st.session_state.matching_documents = []
 
                     # Display response with streaming effect
                     displayed_text = ""
@@ -487,6 +531,9 @@ class App:
                     st.session_state.chat_history.append(AIMessage(content=response))
 
         # Right Sidebar - Matching Info
+        with col_spacer:
+            pass  # Empty spacer column
+
         with col_right:
             st.markdown('<div class="sidebar-section-header">🎫 Matching Tickets</div>', unsafe_allow_html=True)
             if st.session_state.matching_tickets:
@@ -508,17 +555,50 @@ class App:
                         ticket_url = ticket.url if hasattr(ticket, 'url') and ticket.url else None
 
                         if ticket_url:
-                            st.markdown(
-                                f'<div class="ticket-item"><a href="{ticket_url}" target="_blank">🎫 Ticket #{ticket_number}</a></div>',
-                                unsafe_allow_html=True
-                            )
+                            # Create columns for ticket link and pie chart
+                            ticket_col1, ticket_col2 = st.columns([3, 1])
 
-                            # Display similarity score with progress bar if available
-                            if ticket.score is not None:
-                                st.progress(ticket.score, text=f"Similarity: {ticket.score * 100:.1f}%")
+                            with ticket_col1:
+                                st.markdown(
+                                    f'<div class="ticket-item"><a href="{ticket_url}" target="_blank" style="text-decoration: none;">📌 Ticket #{ticket_number}</a></div>',
+                                    unsafe_allow_html=True
+                                )
 
-                            # Add a small spacing between tickets
-                            st.markdown('<div style="margin-bottom: 0.02rem;"></div>', unsafe_allow_html=True)
+                            with ticket_col2:
+                                # Display pie chart with similarity score
+                                if ticket.score is not None:
+                                    score_pct = ticket.score * 100
+                                    remaining_pct = 100 - score_pct
+
+                                    # Color code based on similarity
+                                    if score_pct >= 60:
+                                        score_color = "#4CAF50"  # Green
+                                    elif score_pct >= 40:
+                                        score_color = "#FFC107"  # Yellow/Amber
+                                    else:
+                                        score_color = "#FF0000"  # Red
+
+                                    # SVG pie chart with percentage in center (smaller size)
+                                    pie_chart_svg = f'''
+                                    <div style="display: flex; justify-content: center; align-items: center;">
+                                        <svg width="50" height="50" viewBox="0 0 36 36" style="transform: rotate(-90deg);">
+                                            <!-- Background circle -->
+                                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="#e0e0e0" stroke-width="3"/>
+                                            <!-- Progress circle -->
+                                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="{score_color}" stroke-width="3"
+                                                    stroke-dasharray="{score_pct} {remaining_pct}" stroke-linecap="round"/>
+                                            <!-- Center text -->
+                                            <text x="18" y="18" text-anchor="middle" dy=".3em"
+                                                  style="font-size: 9px; font-weight: 600; fill: {score_color}; transform: rotate(90deg); transform-origin: center;">
+                                                {score_pct:.1f}%
+                                            </text>
+                                        </svg>
+                                    </div>
+                                    '''
+                                    st.markdown(pie_chart_svg, unsafe_allow_html=True)
+
+                            # Add spacing between tickets
+                            st.markdown('<div style="margin-bottom: 0.5rem;"></div>', unsafe_allow_html=True)
             else:
                 st.info("No matching tickets found yet. Ask a question to see related tickets!")
 
@@ -543,6 +623,97 @@ class App:
                     )
             else:
                 st.info("No database queries executed yet. Connected databases will appear here after queries.")
+
+            st.markdown('<div class="sidebar-section-header">📜 Relevant Documents</div>', unsafe_allow_html=True)
+            if st.session_state.matching_documents:
+                for doc_info in st.session_state.matching_documents:
+                    filename = doc_info.get('filename', 'Unknown')
+                    pages = doc_info.get('pages', [])
+                    file_object = doc_info.get('file_object')
+
+                    # Format page numbers nicely
+                    if pages:
+                        if len(pages) == 1:
+                            page_str = f"Page {pages[0]}"
+                        elif len(pages) == 2:
+                            page_str = f"Pages {pages[0]}, {pages[1]}"
+                        else:
+                            # Condense consecutive pages (e.g., 1-3, 5, 7-9)
+                            page_ranges = []
+                            start = pages[0]
+                            end = pages[0]
+
+                            for i in range(1, len(pages)):
+                                if pages[i] == end + 1:
+                                    end = pages[i]
+                                else:
+                                    if start == end:
+                                        page_ranges.append(str(start))
+                                    else:
+                                        page_ranges.append(f"{start}-{end}")
+                                    start = end = pages[i]
+
+                            # Add the last range
+                            if start == end:
+                                page_ranges.append(str(start))
+                            else:
+                                page_ranges.append(f"{start}-{end}")
+
+                            page_str = f"Pages {', '.join(page_ranges)}"
+                    else:
+                        page_str = "Pages unknown"
+
+                    # Display filename
+                    st.markdown(
+                        f'''<div class="db-item">
+                            <div style="font-weight: 600; margin-bottom: 0.25rem;">📃 {filename}</div>
+                            <div style="margin-left: 1rem; padding: 0.25rem 0; color: #e8f4f8;">{page_str}</div>
+                        </div>''',
+                        unsafe_allow_html=True
+                    )
+
+                    # Create download buttons for each page (or first page if multiple)
+                    if file_object and pages:
+                        # For multiple pages, create buttons for key pages
+                        first_page = pages[0]
+
+                        # Reset file pointer to beginning
+                        file_object.seek(0)
+                        file_data = file_object.read()
+
+                        # Create a base64 encoded version for inline viewing with page anchor
+                        b64_pdf = base64.b64encode(file_data).decode()
+
+                        # Create columns for download and view buttons
+                        btn_col1, btn_col2 = st.columns(2)
+
+                        with btn_col1:
+                            # Download button
+                            st.download_button(
+                                label=f"📥 Download",
+                                data=file_data,
+                                file_name=filename,
+                                mime="application/pdf",
+                                key=f"download_{filename}_{first_page}",
+                                use_container_width=True
+                            )
+
+                        with btn_col2:
+                            # View button with embedded iframe
+                            view_button_key = f"view_{filename}_{first_page}"
+                            if st.button(f"👁️ View Page {first_page}", key=view_button_key, use_container_width=True):
+                                # Store the PDF data and page to view in session state
+                                st.session_state['pdf_modal_data'] = {
+                                    'data': b64_pdf,
+                                    'filename': filename,
+                                    'page': first_page
+                                }
+                                st.rerun()
+
+                        # Add spacing
+                        st.markdown('<div style="margin-bottom: 0.5rem;"></div>', unsafe_allow_html=True)
+            else:
+                st.info("No documents analyzed yet. Upload PDFs and ask questions to see relevant pages.")
 
             # Popular Questions Section - Only show if user hasn't asked a question yet
             if st.session_state.show_popular_questions:
@@ -577,15 +748,30 @@ class App:
                 except json.JSONDecodeError:
                     st.error("Error loading popular questions.")
 
-            st.markdown("---", unsafe_allow_html=True)
-            # Clear chat history button
-            if st.button("🗑️ Clear Chat History", use_container_width=True, type="secondary"):
-                # Reset all chat-related session state
-                st.session_state.chat_history = [AIMessage(content="Hello! I'm a Nysus automated assistant. Ask me anything about MES!")]
-                st.session_state.matching_tickets = []
-                st.session_state.matching_databases = []
-                st.session_state.show_popular_questions = True
-                st.session_state.user_has_asked_question = False
+        # PDF Modal Preview - Display if data exists in session state
+        if st.session_state.get('pdf_modal_data'):
+            modal_data = st.session_state.pdf_modal_data
+            filename = modal_data['filename']
+            page = modal_data['page']
+            b64_pdf = modal_data['data']
+
+            # Display full-screen modal with PDF
+            modal_html = f'''
+            <div class="pdf-modal-overlay">
+                <div class="pdf-modal-container">
+                    <div class="pdf-modal-header">
+                        <div class="pdf-modal-title">📄 {filename} - Page {page}</div>
+                    </div>
+                    <div class="pdf-modal-content">
+                        <iframe src="data:application/pdf;base64,{b64_pdf}#page={page}" type="application/pdf"></iframe>
+                    </div>
+                </div>
+            </div>
+            '''
+            st.markdown(modal_html, unsafe_allow_html=True)
+
+            if st.button("✖ Close", key="close_pdf_modal", type="primary"):
+                st.session_state.pdf_modal_data = None
                 st.rerun()
 
 if __name__=="__main__":

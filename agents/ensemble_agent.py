@@ -35,6 +35,7 @@ class EnsembleAgent(Agent):
         response = {
             'relevant_tickets': [],
             'relevant_document_content': None,
+            'relevant_document_sources': [],
             'mcp_response': None
         }
 
@@ -49,10 +50,15 @@ class EnsembleAgent(Agent):
 
         if uploaded_files:
             # Use FrontierAgent to find relevant uploaded files content
-            relevant_document_content = self.frontier.find_relevant_uploaded_content(user_query, uploaded_files)
+            document_response = self.frontier.find_relevant_uploaded_content(user_query, uploaded_files)
 
-            if relevant_document_content:
-                response['relevant_document_content'] = relevant_document_content
+            if document_response:
+                if isinstance(document_response, dict):
+                    response['relevant_document_content'] = document_response.get('content')
+                    response['relevant_document_sources'] = document_response.get('sources', [])
+                else:
+                    # Fallback for old format (just string)
+                    response['relevant_document_content'] = document_response
 
         # Always call MCP agent for database query (even if tickets found)
         self.log("Ensemble Agent delegating to MCP Agent for database query")

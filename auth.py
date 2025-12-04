@@ -45,7 +45,8 @@ def get_user_info(credentials):
     """Get user information from Google"""
     try:
         service = build('oauth2', 'v2', credentials=credentials)
-        user_info = service.userinfo().get().execute()
+        # Explicitly request all fields including picture
+        user_info = service.userinfo().get(fields='email,name,picture,id').execute()
         return user_info
     except Exception as e:
         st.error(f"Error fetching user info: {str(e)}")

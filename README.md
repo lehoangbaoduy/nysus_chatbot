@@ -10,15 +10,19 @@ This repository hosts the reference implementation used by Nysus engineers to pr
 
 - **Conversational Streamlit UI** with chat history and PDF file upload support
 - **Google OAuth Authentication** with domain-restricted access (@nysus.net, @nysus.com)
+- **Flexible Agent Selection**: Enable/disable specific agents (Recently Asked Questions, Tickets, Uploaded Documents, SQL Server) for targeted queries
+- **Popular Questions**: Pre-loaded common questions for quick access and faster query initiation
 - **RAG (Retrieval-Augmented Generation)**: Similarity search over historical support tickets using Chroma vectorstore
 - **MCP Agent**: Natural-language → SQL generation, schema inspection, and safe execution across multiple databases
 - **Multi-agent Architecture**: Scanner, Frontier, Ensemble, Planning, and MCP agents working in concert
 - **Hybrid LLM Support**: Flexible configuration using OpenAI (GPT-4o-mini) and Ollama (Llama3.2) models
-- **PDF Document Processing**: Upload and extract context from PDF files to enhance responses
+- **PDF Document Processing**: Upload and extract context from PDF files to enhance responses with page-level tracking
+- **Enhanced Document Viewer**: In-app PDF viewer with page-specific navigation and download capabilities
+- **Visual Similarity Scores**: Pie chart indicators showing ticket relevance (color-coded: green=high, yellow=medium, red=low)
 - **Local Memory Caching** (`memory.json`) for recently asked questions with intelligent retrieval
 - **Real-time Logging**: Threaded logging with color-coded agent messages displayed in the UI
 - **Dynamic Database Connection**: Connect/disconnect from SQL Server with schema caching for performance
-- **Dual Sidebar Layout**: Left sidebar for settings/connection, right sidebar for matching tickets and database info
+- **Dual Sidebar Layout**: Left sidebar for settings/connection, right sidebar for matching tickets, databases, and document sources
 
 ## Repository Layout
 
@@ -397,6 +401,89 @@ Source files in `data/documents/knowledge_base/`:
 - `projects_index_rag.md` - Project references
 - `quotes_index_rag.md` - Quote references
 
+## Agent Selection and Customization
+
+### Flexible Agent Control
+
+NAAS provides granular control over which agents are used for each query, allowing users to optimize for speed, cost, or specific information sources.
+
+**Available Agent Options:**
+
+1. **Recently Asked Questions** (Scanner Agent)
+   - Searches cached questions from `memory.json`
+   - Uses local Ollama (Llama3.2) - no API costs
+   - Fastest response time (~1-2 seconds)
+   - Best for: Frequently asked questions, quick lookups
+
+2. **Tickets** (Frontier Agent)
+   - RAG search through historical support tickets (2018-2025)
+   - Uses OpenAI embeddings + GPT-4o-mini
+   - Response time: ~3-5 seconds
+   - Best for: Technical troubleshooting, historical context
+
+3. **Uploaded Documents** (Frontier Agent - PDF Processing)
+   - Extracts and searches content from uploaded PDF files
+   - Uses OpenAI embeddings with FAISS in-memory vectorstore
+   - Response time: ~5-15 seconds (depending on document size)
+   - Best for: Project-specific documentation, specifications
+
+4. **SQL Server** (MCP Agent)
+   - Generates and executes SQL queries against databases
+   - Uses OpenAI GPT-4o-mini for query generation
+   - Response time: ~3-7 seconds
+   - Best for: Real-time data lookups, database queries
+
+### How to Use Agent Selection
+
+**In the UI:**
+1. Navigate to the left sidebar
+2. Find the "🤖 Agent Selection" section
+3. Select desired agents from the multiselect dropdown
+4. Leave empty to use all agents (default behavior)
+5. Ask your question - only selected agents will be invoked
+
+**Use Cases:**
+
+- **Speed-optimized queries**: Select only "Recently Asked Questions"
+- **Database-only queries**: Select only "SQL Server"
+- **Document analysis**: Select "Tickets" + "Uploaded Documents"
+- **Comprehensive search**: Leave empty or select all agents
+
+**Cost Optimization:**
+```
+Example Query Cost by Agent Selection:
+- All agents: $0.019-0.029
+- Scanner only: $0.00 (local Ollama)
+- Tickets only: $0.005-0.008
+- SQL Server only: $0.004-0.007
+- Documents only: $0.008-0.012
+```
+
+### Popular Questions Feature
+
+**What it does:**
+- Displays pre-configured common questions in the right sidebar
+- One-click to populate and submit a question
+- Automatically hides after first user question to declutter UI
+- Questions stored in `data/simulated_table_data/popular_questions.json`
+
+**Configuration:**
+
+Edit `data/simulated_table_data/popular_questions.json`:
+```json
+{
+    "question_1": "I'm having a packout issue whereas the module is in the wrong container. What should I do?",
+    "question_2": "I'm having a Volkswagen broadcast parsing stopped at YF - Chattanooga. Give me some relevant tickets...",
+    "question_3": "Custom question here..."
+}
+```
+
+**Benefits:**
+- Faster onboarding for new users
+- Showcases system capabilities
+- Reduces query formulation time
+- Demonstrates proper question formatting
+
 ## Running with MCP (SQL) Agent
 
 ### Connection Process
@@ -467,32 +554,54 @@ The MCP Agent provides intelligent database querying:
 
 Users can upload PDF documents to provide additional context for their questions. The Frontier Agent extracts text from PDFs and uses it alongside ticket knowledge.
 
-### Usage
+### Enhanced Capabilities
 
+**Upload and Analysis:**
 1. **Upload**: Use the file uploader in the left sidebar
 2. **Multiple Files**: Select multiple PDFs if needed
-3. **Ask Questions**: Reference content from uploaded documents in your queries
-4. **Context Integration**: Responses automatically incorporate relevant PDF content
+3. **Agent Control**: Enable/disable "Uploaded Documents" agent as needed
+4. **Ask Questions**: Reference content from uploaded documents in your queries
+5. **Context Integration**: Responses automatically incorporate relevant PDF content
+
+**Document Source Tracking:**
+- Right sidebar shows "📜 Relevant Documents" section
+- Lists each document with specific page numbers referenced
+- Displays page ranges (e.g., "Pages 1-3, 5, 7-9") for multi-page references
+- Color-coded visualization for easy identification
+
+**In-App PDF Viewer:**
+- **View Button**: Click "👁️ View Page X" to open PDF in modal viewer
+- **Download Button**: Click "📥 Download" to save PDF locally
+- **Page Navigation**: Opens directly to referenced page
+- **Full-Screen Modal**: Large, readable preview with close button
+- **Multiple Documents**: Separate viewers for each uploaded file
 
 ### Technical Details
 
 - **Extraction**: PyPDF2 library extracts text from all pages
 - **Processing**: Text is chunked using LangChain `CharacterTextSplitter`
 - **Embeddings**: Creates in-memory FAISS vectorstore with OpenAI embeddings
-- **Retrieval**: Similarity search finds relevant document sections
+- **Retrieval**: Similarity search finds relevant document sections (with page tracking)
+- **Source Tracking**: Maintains metadata of which pages contain relevant content
+- **Modal Display**: Base64-encoded PDF with embedded iframe for in-app viewing
 - **Integration**: Planning Agent synthesizes PDF content with tickets and database results
 
 ### Example Workflow
 
 ```python
-# User uploads project_specification.pdf
+# User uploads project_specification.pdf (15 pages)
+# User selects agents: "Tickets" + "Uploaded Documents"
 # User asks: "What are the testing requirements?"
+
 # System:
-# 1. Extracts text from PDF
-# 2. Creates temporary FAISS vectorstore
-# 3. Searches for "testing requirements"
-# 4. Combines with ticket knowledge
-# 5. Returns comprehensive answer
+# 1. Extracts text from PDF (all 15 pages)
+# 2. Creates temporary FAISS vectorstore with page metadata
+# 3. Searches for "testing requirements" in tickets + PDF
+# 4. Finds relevant content on pages 7, 8, 12
+# 5. Displays in right sidebar: "Pages 7-8, 12"
+# 6. User clicks "👁️ View Page 7" to see content
+# 7. Modal opens with PDF at page 7
+# 8. Returns comprehensive answer combining tickets + PDF content
 ```
 
 ### Limitations

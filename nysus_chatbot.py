@@ -13,7 +13,6 @@ from log_utils import reformat
 from chatbot_agent_framework import ChatbotAgentFramework
 from langchain_core.messages import AIMessage, HumanMessage
 from auth import check_authentication, show_login_page, show_user_info
-from PIL import Image
 
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
@@ -134,10 +133,10 @@ class App:
             show_login_page()
             return
 
-        def initiate(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
+        def initiate(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None, agent_selection=None):
             """Run the agent framework and return new opportunities"""
             # Use the passed agent framework
-            result = agent_framework.run(user_query, chat_history, uploaded_files, schema)
+            result = agent_framework.run(user_query, chat_history, uploaded_files, schema, agent_selection)
 
             # Handle response from agent framework
             # Result can be either a Dict (from Planning/Ensemble Agent) or List (from memory)
@@ -213,14 +212,14 @@ class App:
                 }
 
         # Everything happens here
-        def initiate_with_logging(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None):
+        def initiate_with_logging(user_query: str, chat_history: list, uploaded_files: list, agent_framework, schema=None, agent_selection=None):
             """Run agent with logging capability"""
             log_queue = queue.Queue()
             result_queue = queue.Queue()
             setup_logging(log_queue)
 
             def worker():
-                result = initiate(user_query, chat_history, uploaded_files, agent_framework, schema)
+                result = initiate(user_query, chat_history, uploaded_files, agent_framework, schema, agent_selection)
                 result_queue.put(result)
 
             thread = threading.Thread(target=worker)
@@ -274,13 +273,39 @@ class App:
             st.session_state.user_has_asked_question = False
         if 'pdf_modal_data' not in st.session_state:
             st.session_state.pdf_modal_data = None
+        if 'agent_selection' not in st.session_state:
+            st.session_state.agent_selection = []
 
         # ------------------- Left Sidebar - Settings -------------------
         with st.sidebar:
-            # Display user info at top of sidebar
+            # Display user info at top of sidebar (compact)
+            st.markdown('<div style="padding: 0.5rem 0; margin-bottom: 0.5rem;">', unsafe_allow_html=True)
             show_user_info()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown("---")
+            st.markdown('<hr style="margin: 0.5rem 0;">', unsafe_allow_html=True)
+
+            # Agent Selection Section (compact)
+            st.markdown('<div style="margin-bottom: 0.5rem;">', unsafe_allow_html=True)
+            st.markdown("**🤖 Agent Selection**")
+            agent_options = [
+                "Recently Asked Questions",
+                "Tickets",
+                "Uploaded Documents",
+                "SQL Server"
+            ]
+            # Use key="agent_selection" to automatically store in session state
+            # Don't use default parameter - the key will handle initialization from session state
+            st.multiselect(
+                "Select agents (empty = all):",
+                options=agent_options,
+                help="Leave empty to use all agents",
+                key="agent_selection",
+                label_visibility="collapsed"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<hr style="margin: 0.5rem 0;">', unsafe_allow_html=True)
 
             # Show persistent connection status
             is_connected = 'db_connection_params' in st.session_state and st.session_state.db_connection_params is not None
@@ -399,11 +424,6 @@ class App:
                 unique_files = []
                 duplicate_names = []
 
-                # Debug: Show what we received
-                st.info(f"File uploader returned {len(user_uploaded_files)} file(s)")
-                for idx, file in enumerate(user_uploaded_files):
-                    st.text(f"  {idx+1}: {file.name} (id: {id(file)})")
-
                 for file in user_uploaded_files:
                     if file.name not in seen_names:
                         seen_names.add(file.name)
@@ -454,6 +474,10 @@ class App:
                 st.session_state.submitted_question = None  # Clear it after use
 
             if user_query and user_query.strip():
+                # IMPORTANT: Capture agent selection at the START of query processing
+                # This ensures we get the selection from BEFORE the rerun
+                current_agent_selection = st.session_state.get('agent_selection', []).copy()
+
                 # Mark that user has asked a question and hide popular questions
                 st.session_state.user_has_asked_question = True
                 st.session_state.show_popular_questions = False
@@ -471,14 +495,11 @@ class App:
                     chat_history = st.session_state.chat_history.copy()  # Make a copy!
                     # Get uploaded files from session state
                     uploaded_files = st.session_state.get('user_uploaded_files', [])
-                    sys.stdout.flush()
                     try:
                         current_agent_framework = self.get_agent_framework()
-                        sys.stdout.flush()
                     except Exception as e:
                         import traceback
                         traceback.print_exc()
-                        sys.stdout.flush()
                         st.error(f"Failed to initialize chatbot: {e}")
                         st.stop()
 
@@ -492,7 +513,8 @@ class App:
                             chat_history,
                             uploaded_files,
                             current_agent_framework,
-                            cached_schema
+                            cached_schema,
+                            current_agent_selection  # Pass the captured selection
                         )
 
                     # Start getting response in background

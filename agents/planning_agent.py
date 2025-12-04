@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict
 from agents.agent import Agent
-from agents.base_classes import Company, Ticket
+from agents.base_classes import Ticket
 from agents.scanner_agent import ScannerAgent
 from agents.ensemble_agent import EnsembleAgent
 from openai import OpenAI
@@ -155,7 +155,7 @@ class PlanningAgent(Agent):
                 fallback += f"Also queried database: {mcp_response.get('database')}\n"
             return fallback
 
-    def plan(self, memory: List[str] = [], user_query: str = "", chat_history: List = [], uploaded_files: List = [], schema: str = None) -> Optional[List]:
+    def plan(self, memory: List[str] = [], user_query: str = "", chat_history: List = [], uploaded_files: List = [], schema: str = None, agent_selection: List[str] = None) -> Optional[List]:
         """
         Run the full workflow:
         1. Use the ScannerAgent to see if the most recently asked questions match the user question (trying cached approach first)
@@ -166,8 +166,15 @@ class PlanningAgent(Agent):
         :param chat_history: previous conversation context
         :param uploaded_files: any files uploaded by the user
         :param schema: optional pre-fetched database schema
+        :param agent_selection: list of selected agents to use (empty = all agents)
         :return: a dict with response information including natural_response, rag_response, mcp_response
         """
+        # Default to all agents if none selected
+        if not agent_selection:
+            agent_selection = ["Recently Asked Questions", "Tickets", "Uploaded Documents", "SQL Server"]
+
+        self.log(f"Planning Agent using agents: {', '.join(agent_selection)}")
+
         response = {
             'recently_asked_questions': [],
             'rag_response': None,
@@ -177,21 +184,32 @@ class PlanningAgent(Agent):
             'natural_response': ""
         }
 
-        self.log("Planning Agent is delegating to Scanner Agent to find recently asked questions")
-        scanner_response = self.scanner.scan(memory=memory, user_query=user_query)
+        # Check if Scanner Agent should be used
+        use_scanner = "Recently Asked Questions" in agent_selection
+        if use_scanner:
+            self.log("Planning Agent is delegating to Scanner Agent to find recently asked questions")
+            scanner_response = self.scanner.scan(memory=memory, user_query=user_query)
 
-        # Extract PDF context from scanner response if available
-        if scanner_response and scanner_response.questions:
-            self.log(f"Planning Agent received {len(scanner_response.questions)} questions from Scanner")
-
-            self.log("Planning Agent has completed a run")
-            response['recently_asked_questions'] = scanner_response.questions
+            # Extract PDF context from scanner response if available
+            if scanner_response and scanner_response.questions:
+                self.log(f"Planning Agent received {len(scanner_response.questions)} questions from Scanner")
+                response['recently_asked_questions'] = scanner_response.questions
         else:
-            self.log("No relevant recently asked questions found. Asking Ensemble Agent to search knowledge base.")
+            self.log("Scanner Agent disabled by agent selection")
 
-            # Use EnsembleAgent to answer the question by searching ChromaDB and potentially MCP server
+        # Check if we should use Ensemble Agent (for tickets, documents, or SQL server)
+        use_ensemble = any(agent in agent_selection for agent in ["Tickets", "Uploaded Documents", "SQL Server"])
+
+        if use_ensemble:
             self.log("Planning Agent is delegating to Ensemble Agent to answer the user question")
-            ensemble_response = self.ensemble.answer_question(user_query, chat_history, n_results=5, schema=schema, uploaded_files=uploaded_files)
+            ensemble_response = self.ensemble.answer_question(
+                user_query,
+                chat_history,
+                n_results=5,
+                schema=schema,
+                uploaded_files=uploaded_files,
+                agent_selection=agent_selection
+            )
 
             relevant_tickets = ensemble_response.get('relevant_tickets', None)
             if relevant_tickets:
@@ -212,6 +230,8 @@ class PlanningAgent(Agent):
             if mcp_response:
                 self.log("Planning Agent received response from MCP server")
                 response['mcp_response'] = mcp_response
+        else:
+            self.log("Ensemble Agent disabled by agent selection")
 
         # Generate natural response using LLM
         natural_response = self.synthesize_response(

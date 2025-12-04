@@ -2,7 +2,8 @@ import os
 import sys
 import logging
 import json
-from typing import List, Optional
+import sys
+from typing import List
 from dotenv import load_dotenv
 import chromadb
 from agents.planning_agent import PlanningAgent
@@ -118,10 +119,10 @@ class ChatbotAgentFramework:
         text = BG_BLUE + WHITE + "[Agent Framework] " + message + RESET
         logging.info(text)
 
-    def run(self, user_query, chat_history, uploaded_files, schema=None):
+    def run(self, user_query, chat_history, uploaded_files, schema=None, agent_selection=None):
         # Note: init_agents_as_needed() already called in get_agent_framework()
         logging.info("Kicking off Planning Agent")
-        result = self.planner.plan(memory=self.memory, user_query=user_query, chat_history=chat_history, uploaded_files=uploaded_files, schema=schema)
+        result = self.planner.plan(memory=self.memory, user_query=user_query, chat_history=chat_history, uploaded_files=uploaded_files, schema=schema, agent_selection=agent_selection)
         logging.info(f"Planning Agent has completed and returned: {type(result)}")
         # Return result directly - don't append to memory as it causes duplicate processing
         return result
